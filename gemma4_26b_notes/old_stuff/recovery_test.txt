@@ -1,0 +1,1 @@
+Recovery Test: This is a small, stable payload to verify stream integrity.

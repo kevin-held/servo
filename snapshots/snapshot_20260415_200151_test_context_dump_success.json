@@ -1,0 +1,6 @@
+{
+  "snapshot_label": "test_context_dump_success",
+  "timestamp_utc": "2026-04-15T20:01:51.327301+00:00",
+  "goals": {},
+  "working_memory": "GOALS: None.\nSHELL_EXEC: Non-functional (no side-effects, stdout, or file creation; `python -c`, `echo`, `dir` fail; internal writes fail).\n\n\nBRAINSTORMING RESULTS:\n\n1. Context Viewer Ideas:\n   - 'context_dump' Tool: Returns JSON with goals, memory, and active file state.\n   - 'memory_snapshot' Tool: Saves current state to a timestamped file in the notes folder for diffing.\n   - 'workspace_overview' Tool: Focused directory analysis of the notes and logs folders.\n\n2. Memory Management Audit Ideas:\n   - 'memory_consistency_check': Verifies alignment between goal_manager and memory_manager.\n   - 'memory_deduplication': Identifies and removes redundant information.\n   - 'memory_integrity_hash': Uses hashes to ensure cross-session memory integrity.\n   - 'memory_relevance_score': Evaluates the relevance of memory entries to active goals."
+}

@@ -1,0 +1,77 @@
+{"timestamp_utc": "2026-04-17T05:30:43.784633+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: analyze_directory"}
+{"timestamp_utc": "2026-04-17T05:30:43.785851+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: context_dump"}
+{"timestamp_utc": "2026-04-17T05:30:43.786681+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: fetch_url"}
+{"timestamp_utc": "2026-04-17T05:30:43.787498+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: filesystem"}
+{"timestamp_utc": "2026-04-17T05:30:43.788357+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: goal_manager"}
+{"timestamp_utc": "2026-04-17T05:30:43.789365+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_query"}
+{"timestamp_utc": "2026-04-17T05:30:43.790173+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_manager"}
+{"timestamp_utc": "2026-04-17T05:30:43.791155+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_snapshot"}
+{"timestamp_utc": "2026-04-17T05:30:43.792021+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: role_manager"}
+{"timestamp_utc": "2026-04-17T05:30:43.793011+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: screenshot"}
+{"timestamp_utc": "2026-04-17T05:30:43.793833+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: shell_exec"}
+{"timestamp_utc": "2026-04-17T05:30:43.794655+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: system_config"}
+{"timestamp_utc": "2026-04-17T05:30:43.795472+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: web_search"}
+{"timestamp_utc": "2026-04-17T05:30:48.247220+00:00", "level": "INFO", "component": "core_loop", "message": "Core loop started", "context": {"model": "gemma4:26b", "continuous_mode": false}}
+{"timestamp_utc": "2026-04-17T05:31:05.845822+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input received (10 chars)"}
+{"timestamp_utc": "2026-04-17T05:31:05.847876+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Loaded 15 conversation turns"}
+{"timestamp_utc": "2026-04-17T05:31:06.676941+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Loaded 5 relevant memory entries via vector search"}
+{"timestamp_utc": "2026-04-17T05:31:06.678535+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Available tools: ['analyze_directory', 'context_dump', 'fetch_url', 'filesystem', 'goal_manager', 'log_query', 'memory_manager', 'memory_snapshot', 'role_manager', 'screenshot', 'shell_exec', 'system_config', 'web_search']"}
+{"timestamp_utc": "2026-04-17T05:31:06.759891+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
+{"timestamp_utc": "2026-04-17T05:31:06.761071+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 16 | Tools: 13"}
+{"timestamp_utc": "2026-04-17T05:31:23.299616+00:00", "level": "INFO", "component": "loop.reason", "message": "Response received (179 chars)"}
+{"timestamp_utc": "2026-04-17T05:31:23.301148+00:00", "level": "INFO", "component": "loop.reason", "message": "No tool call — direct response"}
+{"timestamp_utc": "2026-04-17T05:31:23.302413+00:00", "level": "INFO", "component": "loop.act", "message": "Returning direct response"}
+{"timestamp_utc": "2026-04-17T05:31:23.304741+00:00", "level": "INFO", "component": "loop.integrate", "message": "No tool used — no memory update"}
+{"timestamp_utc": "2026-04-17T05:31:31.715409+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input received (33 chars)"}
+{"timestamp_utc": "2026-04-17T05:31:31.717117+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Loaded 15 conversation turns"}
+{"timestamp_utc": "2026-04-17T05:31:31.900506+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Loaded 5 relevant memory entries via vector search"}
+{"timestamp_utc": "2026-04-17T05:31:31.901880+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Available tools: ['analyze_directory', 'context_dump', 'fetch_url', 'filesystem', 'goal_manager', 'log_query', 'memory_manager', 'memory_snapshot', 'role_manager', 'screenshot', 'shell_exec', 'system_config', 'web_search']"}
+{"timestamp_utc": "2026-04-17T05:31:31.996291+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
+{"timestamp_utc": "2026-04-17T05:31:31.997624+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 16 | Tools: 13"}
+{"timestamp_utc": "2026-04-17T05:31:37.987241+00:00", "level": "INFO", "component": "loop.reason", "message": "Response received (397 chars)"}
+{"timestamp_utc": "2026-04-17T05:31:37.988779+00:00", "level": "INFO", "component": "loop.reason", "message": "Tool call detected: context_dump"}
+{"timestamp_utc": "2026-04-17T05:31:37.989944+00:00", "level": "INFO", "component": "loop.act", "message": "Executing: context_dump"}
+{"timestamp_utc": "2026-04-17T05:31:37.991332+00:00", "level": "INFO", "component": "loop.act", "message": "Args: {}"}
+{"timestamp_utc": "2026-04-17T05:31:37.991950+00:00", "level": "INFO", "component": "tool_exec", "message": "Executing tool: context_dump", "context": {"tool": "context_dump", "args_preview": "{}"}}
+{"timestamp_utc": "2026-04-17T05:31:38.043386+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: analyze_directory"}
+{"timestamp_utc": "2026-04-17T05:31:38.044494+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: context_dump"}
+{"timestamp_utc": "2026-04-17T05:31:38.045308+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: fetch_url"}
+{"timestamp_utc": "2026-04-17T05:31:38.046093+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: filesystem"}
+{"timestamp_utc": "2026-04-17T05:31:38.046938+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: goal_manager"}
+{"timestamp_utc": "2026-04-17T05:31:38.047903+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_query"}
+{"timestamp_utc": "2026-04-17T05:31:38.048761+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_manager"}
+{"timestamp_utc": "2026-04-17T05:31:38.049794+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_snapshot"}
+{"timestamp_utc": "2026-04-17T05:31:38.050995+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: role_manager"}
+{"timestamp_utc": "2026-04-17T05:31:38.051986+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: screenshot"}
+{"timestamp_utc": "2026-04-17T05:31:38.052863+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: shell_exec"}
+{"timestamp_utc": "2026-04-17T05:31:38.053709+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: system_config"}
+{"timestamp_utc": "2026-04-17T05:31:38.054537+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: web_search"}
+{"timestamp_utc": "2026-04-17T05:31:38.070204+00:00", "level": "DEBUG", "component": "tool_exec", "message": "Tool 'context_dump' completed", "context": {"tool": "context_dump", "result_preview": "{\n  \"timestamp_utc\": \"2026-04-17T05:31:38.055151+00:00\",\n  \"workspace\": \"C:\\\\Users\\\\kevin\\\\OneDrive\\\\Desktop\\\\ai\",\n  \"last_modified_file\": \"logs\\\\sentinel.jsonl\",\n  \"goals\": {\n    \"role_sentinel\": {\n "}}
+{"timestamp_utc": "2026-04-17T05:31:38.071644+00:00", "level": "INFO", "component": "loop.act", "message": "Result: {\n  \"timestamp_utc\": \"2026-04-17T05:31:38.055151+00:00\",\n  \"workspace\": \"C:\\\\Users\\\\kevin\\\\OneDrive\\\\Desktop\\\\ai\",\n  \"last_modified_file\": \"logs\\\\sentinel.jsonl\",\n  \"goals\": {\n    \"role_sentinel\": {\n "}
+{"timestamp_utc": "2026-04-17T05:31:38.072833+00:00", "level": "INFO", "component": "loop.act", "message": "Sending tool result back to model"}
+{"timestamp_utc": "2026-04-17T05:31:46.911964+00:00", "level": "INFO", "component": "loop.integrate", "message": "Memory updated: Used context_dump → {\n  \"timestamp_utc\": \"2026-04-17T05:31:38.055151+00:00\",\n  \"workspace\": \"C:\\\\Users\\\\kevin\\\\OneDrive\\\\Desktop\\\\ai\",\n  \"last_modified_file\": \"logs\\\\sentinel.jsonl\",\n  \"goals\": {\n    \"role_sentinel\": {\n      \"type\": \"continuous\",\n      \"description\": \"[The Sentinel] Scan system logs using log_query for ERROR/CRITICAL entries from the last cycle. If issues found, investigate and document findings. If clean, confirm system health.\",\n      \"schedule_minutes\": 5,\n      \"status\": \"DUE NOW\"\n    },\n    \"role_scholar\": {\n      \"type\": \"continuous\",\n      \"description\": \"[The Scholar] 1. Identify 'Last Modified' time of gemma4_26b_notes/architecture_review.md. 2. Use analyze_directory to find files newer than that timestamp. 3. Read changed files one by one and update the architecture review.\",\n      \"schedule_minutes\": 120,\n      \"status\": \"DUE NOW\"\n    },\n    \"role_orchestrator\": {\n      \"type\": \"continuous\",\n      \"description\": \"[The Orchestrator] Run context_dump to assess workspace state. Sc"}
+{"timestamp_utc": "2026-04-17T05:31:46.913433+00:00", "level": "INFO", "component": "loop.integrate", "message": "Model chained a tool block! Re-looping automatically."}
+{"timestamp_utc": "2026-04-17T05:31:46.914754+00:00", "level": "INFO", "component": "loop.perceive", "message": "--- CYCLE 2 / 3 ---"}
+{"timestamp_utc": "2026-04-17T05:31:46.916082+00:00", "level": "INFO", "component": "loop.perceive", "message": "Auto-chaining payload intercepted"}
+{"timestamp_utc": "2026-04-17T05:31:46.917470+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Loaded 15 conversation turns"}
+{"timestamp_utc": "2026-04-17T05:31:46.918718+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Loaded 5 recent memory entries"}
+{"timestamp_utc": "2026-04-17T05:31:46.919942+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Available tools: ['analyze_directory', 'context_dump', 'fetch_url', 'filesystem', 'goal_manager', 'log_query', 'memory_manager', 'memory_snapshot', 'role_manager', 'screenshot', 'shell_exec', 'system_config', 'web_search']"}
+{"timestamp_utc": "2026-04-17T05:31:46.921262+00:00", "level": "INFO", "component": "loop.reason", "message": "Skipped model query — pushing auto-chained tool: analyze_directory"}
+{"timestamp_utc": "2026-04-17T05:31:46.926615+00:00", "level": "INFO", "component": "loop.act", "message": "Executing: analyze_directory"}
+{"timestamp_utc": "2026-04-17T05:31:46.927800+00:00", "level": "INFO", "component": "loop.act", "message": "Args: {\"directory\": \"C:/Users/kevin/OneDrive/Desktop/ai\", \"recursive\": true}"}
+{"timestamp_utc": "2026-04-17T05:31:46.928526+00:00", "level": "INFO", "component": "tool_exec", "message": "Executing tool: analyze_directory", "context": {"tool": "analyze_directory", "args_preview": "{\"directory\": \"C:/Users/kevin/OneDrive/Desktop/ai\", \"recursive\": true}"}}
+{"timestamp_utc": "2026-04-17T05:31:46.969619+00:00", "level": "WARNING", "component": "tool_registry", "message": "Output truncated for analyze_directory", "context": {"tool": "analyze_directory", "total_chars": 15596, "cap": 8000}}
+{"timestamp_utc": "2026-04-17T05:31:46.970319+00:00", "level": "DEBUG", "component": "tool_exec", "message": "Tool 'analyze_directory' completed", "context": {"tool": "analyze_directory", "result_preview": "=== DIRECTORY ANALYSIS: C:/Users/kevin/OneDrive/Desktop/ai ===\n\n[STRUCTURE]\nFolders (31): configs, core, core\\__pycache__, gemma4_206b_notes, gemma4_20b_notes, gemma4_26b_notes, gemma4_26b_notes\\old_s"}}
+{"timestamp_utc": "2026-04-17T05:31:46.971548+00:00", "level": "INFO", "component": "loop.act", "message": "Result: === DIRECTORY ANALYSIS: C:/Users/kevin/OneDrive/Desktop/ai ===\n\n[STRUCTURE]\nFolders (31): configs, core, core\\__pycache__, gemma4_206b_notes, gemma4_20b_notes, gemma4_26b_notes, gemma4_26b_notes\\old_s"}
+{"timestamp_utc": "2026-04-17T05:31:46.972957+00:00", "level": "INFO", "component": "loop.act", "message": "Sending tool result back to model"}
+{"timestamp_utc": "2026-04-17T05:31:56.668519+00:00", "level": "INFO", "component": "loop.integrate", "message": "Memory updated: Used analyze_directory → === DIRECTORY ANALYSIS: C:/Users/kevin/OneDrive/Desktop/ai ===\n\n[STRUCTURE]\nFolders (31): configs, core, core\\__pycache__, gemma4_206b_notes, gemma4_20b_notes, gemma4_26b_notes, gemma4_26b_notes\\old_stuff, gemma4_26b_notes\\old_stuff\\test_subdir, gemma4_26b_notes\\screenshots, gui, gui\\__pycache__, logs, logs\\archive, mixtral_latest_notes, mnt, mnt\\user-data, mnt\\user-data\\outputs, mnt\\user-data\\outputs\\brainify, mnt\\user-data\\outputs\\brainify\\gui, qwen3_5_27b_notes\nFiles (144):\n  - __init__.py (Modified: 2026-04-10 10:54:42)\n  - configs\\models.json (Modified: 2026-04-16 13:30:23)\n  - core\\__init__.py (Modified: 2026-04-10 10:54:42)\n  - core\\__pycache__\\__init__.cpython-313.pyc (Modified: 2026-04-10 11:01:45)\n  - core\\__pycache__\\hardware.cpython-313.pyc (Modified: 2026-04-16 13:31:29)\n  - core\\__pycache__\\loop.cpython-313.pyc (Modified: 2026-04-16 13:31:08)\n  - core\\__pycache__\\ollama_client.cpython-313.pyc (Modified: 2026-04-16 13:31:09)\n  - core\\__pycache__\\sentinel_logger.cpython-313"}
+{"timestamp_utc": "2026-04-17T05:32:49.595521+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input received (92 chars)"}
+{"timestamp_utc": "2026-04-17T05:32:49.597264+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Loaded 15 conversation turns"}
+{"timestamp_utc": "2026-04-17T05:32:49.729116+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Loaded 5 relevant memory entries via vector search"}
+{"timestamp_utc": "2026-04-17T05:32:49.730300+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Available tools: ['analyze_directory', 'context_dump', 'fetch_url', 'filesystem', 'goal_manager', 'log_query', 'memory_manager', 'memory_snapshot', 'role_manager', 'screenshot', 'shell_exec', 'system_config', 'web_search']"}
+{"timestamp_utc": "2026-04-17T05:32:49.818477+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
+{"timestamp_utc": "2026-04-17T05:32:49.819769+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 16 | Tools: 13"}
+{"timestamp_utc": "2026-04-17T05:33:01.058976+00:00", "level": "INFO", "component": "loop.reason", "message": "Response received (1502 chars)"}
+{"timestamp_utc": "2026-04-17T05:33:01.073002+00:00", "level": "INFO", "component": "loop.reason", "message": "No tool call — direct response"}
+{"timestamp_utc": "2026-04-17T05:33:01.074529+00:00", "level": "INFO", "component": "loop.act", "message": "Returning direct response"}
+{"timestamp_utc": "2026-04-17T05:33:01.076930+00:00", "level": "INFO", "component": "loop.integrate", "message": "No tool used — no memory update"}

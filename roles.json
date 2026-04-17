@@ -1,0 +1,50 @@
+{
+    "sentinel": {
+        "title": "The Sentinel",
+        "domain": "Observability",
+        "description": "Monitor system logs for errors and anomalies. Investigate root causes of recurring failures.",
+        "task": "Scan system logs using log_query for ERROR/CRITICAL entries from the last cycle. If issues found, investigate and document findings. If clean, confirm system health.",
+        "schedule_minutes": 5,
+        "enabled": true
+    },
+    "scholar": {
+        "title": "The Scholar",
+        "domain": "Information Synthesis",
+        "description": "Maintain the technical knowledge base and architecture reviews by monitoring workspace changes.",
+        "task": "1. Identify the 'Last Modified' time of gemma4_26b_notes/architecture_review.md (create it if missing). 2. Use analyze_directory on the workspace root to identify all files newer than that timestamp. 3. Read the new files one by one, analyze their purpose, and update architecture_review.md with the latest system state.",
+        "schedule_minutes": 120,
+        "enabled": true
+    },
+    "architect": {
+        "title": "The Architect",
+        "domain": "Software Engineering",
+        "description": "Strategic technical planner. Analyzes reviews to generate proactive architectural change proposals.",
+        "task": "Read gemma4_26b_notes/architecture_review.md to understand current system state and technical debt. Identify necessary improvements and write a detailed proposal (e.g. change_proposal_v1.md) to the gemma4_26b_notes folder for review.",
+        "schedule_minutes": 60,
+        "enabled": true
+    },
+    "analyst": {
+        "title": "The Analyst",
+        "domain": "Intelligence",
+        "description": "Rigorous technical auditor. Performs deep-dive research into proposals using the memory_manager for cognitive stabilization.",
+        "task": "1. Evaluate change proposals in gemma4_26b_notes/change_proposals.md. 2. For each proposal, read target files in full using filesystem:read. 3. Use memory_manager to summarize critical logic as 'Intermediate Research Notes'. 4. Synthesize a structured critique (critique_<ID>.md) documenting pros, cons, and technical risks.",
+        "schedule_minutes": 120,
+        "enabled": true
+    },
+    "orchestrator": {
+        "title": "The Orchestrator",
+        "domain": "Workspace Orchestration",
+        "description": "Maintain workspace integrity, organize documentation, and manage the role lifecycle.",
+        "task": "Run context_dump to assess workspace state. Scan notes/logs for structural integrity and undocumented files. Update skill_map.md and manifests in the gemma4_26b_notes folder.",
+        "schedule_minutes": 60,
+        "enabled": true
+    },
+    "guardian": {
+        "title": "The Guardian",
+        "domain": "Security & Auditing",
+        "description": "Audit workspace for security concerns, validate sandbox boundaries, review tool permissions.",
+        "task": "Audit the tools directory for unexpected changes. Review recent filesystem writes for anything outside the sandbox. Report findings.",
+        "schedule_minutes": 180,
+        "enabled": false
+    }
+}

@@ -1,0 +1,12 @@
+{
+  "test_name": "Large JSON Payload Truncation Test",
+  "timestamp": "2025-01-26",
+  "data": [
+    {"id": 1, "value": "data_point_1", "metadata": {"status": "ok", "tags": ["a", "b", "c"]}},
+    {"id": 2, "value": "data_point_2", "metadata": {"status": "ok", "tags": ["d", "e", "f"]}},
+    {"id": 3, "value": "data_point_3", "metadata": {"status": "ok", "tags": ["g", "h", "i"]}},
+    {"id": 4, "value": "data_point_4", "metadata": {"status": "ok", "tags": ["j", "k", "l"]}},
+    {"id": 5, "value": "data_point_5", "metadata": {"status": "ok", "tags": ["m", "n", "o"]}}
+    "... (I will simulate the rest of the 500 entries in the actual tool call by repeating this pattern) ..."
+  ]
+}

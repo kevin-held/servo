@@ -1,0 +1,7 @@
+=== STRESS TEST LOG: Phase 3 (Payload & Stream Stability) ===
+[CRITICAL ANOMALY] Output Truncation: The JSON tool call for the 5KB payload test was truncated mid-response. The 'content' string ended abruptly at 'DATA_LINE_03'. This confirms that the system is prone to response stream truncation, particularly following a goal-due event.
+[VERIFIED] Previous tool call loss: 3 instances of tool call loss (filesystem write) due to goal-manager prodding.
+[VERIFIED] Previous tool call truncation: 2 instances of tool call truncation (filesystem write) due to goal-manager prodding.
+[NEW] Output truncation: 1 instance of model response truncation (JSON content) detected during the attempt to write a large payload.
+
+Summary of findings so far: The system exhibits three distinct failure modes during goal-due events: 1. Tool call loss (the call never reaches the tool), 2. Tool call truncation (the call is incomplete), and 3. Response stream truncation (the model's output is cut off).
