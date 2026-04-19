@@ -45,9 +45,24 @@ class StateStore:
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            -- Phase 2: INTEGRATE-time auto-compression of conversation history.
+            -- Only the newest row matters to the runtime ([PRIOR CONTEXT] block
+            -- in system prompt + message-list filter in _build_messages).
+            -- Prior rows are retained as an audit trail.
+            -- covers_from_id / covers_to_id reference conversation.id values;
+            -- they are the inclusive range of raw turns this summary replaces
+            -- in the model's view. See decisions.md D-20260419-01.
+            CREATE TABLE IF NOT EXISTS conversation_summary (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                summary        TEXT    NOT NULL,
+                covers_from_id INTEGER NOT NULL,
+                covers_to_id   INTEGER NOT NULL,
+                model_used     TEXT    NOT NULL,
+                created_at     REAL    NOT NULL
+            );
         """)
         self.conn.commit()
-        
+
         # Safely attempt to upgrade schema for legacy databases
         try:
             self.conn.execute("ALTER TABLE conversation ADD COLUMN image TEXT")
@@ -65,10 +80,104 @@ class StateStore:
             )
 
     def get_conversation_history(self, limit: int = 10) -> list:
+        # Returns the `limit` most-recent turns, oldest-first. The `id` field
+        # was added in Phase 2 (D-20260419-01) so callers can filter turns
+        # already covered by a conversation_summary. Existing callers that
+        # only read role/content/image are unaffected.
         cur = self.conn.execute(
-            "SELECT role, content, image FROM conversation ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT id, role, content, image FROM conversation ORDER BY id DESC LIMIT ?", (limit,)
         )
-        return [{"role": r[0], "content": r[1], "image": r[2]} for r in reversed(cur.fetchall())]
+        return [
+            {"id": r[0], "role": r[1], "content": r[2], "image": r[3]}
+            for r in reversed(cur.fetchall())
+        ]
+
+    # ── Conversation Summary (Phase 2 auto-compression) ────
+
+    def get_latest_conversation_summary(self) -> dict | None:
+        """Return the newest summary row, or None if none exists.
+
+        This is the row the runtime actually reads when building the
+        [PRIOR CONTEXT] block and when filtering the message list. Prior
+        rows in the table are kept as an audit trail but never served.
+        """
+        cur = self.conn.execute(
+            "SELECT id, summary, covers_from_id, covers_to_id, model_used, created_at "
+            "FROM conversation_summary ORDER BY id DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id":             row[0],
+            "summary":        row[1],
+            "covers_from_id": row[2],
+            "covers_to_id":   row[3],
+            "model_used":     row[4],
+            "created_at":     row[5],
+        }
+
+    def save_conversation_summary(
+        self,
+        summary: str,
+        covers_from_id: int,
+        covers_to_id: int,
+        model_used: str,
+    ) -> int:
+        """Append a new summary row. Returns its id.
+
+        The compressor writes a new row on each successful compression
+        rather than updating an existing one. `get_latest_conversation_summary`
+        only serves the newest, so behavior is rollup-in-place; the prior
+        rows are retained for diagnostics (e.g. 'when did the summary
+        containing <phrase> get written?').
+        """
+        with self.conn:
+            cur = self.conn.execute(
+                "INSERT INTO conversation_summary "
+                "(summary, covers_from_id, covers_to_id, model_used, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (summary, covers_from_id, covers_to_id, model_used, time.time()),
+            )
+        return cur.lastrowid
+
+    def count_conversation_turns_since(self, conversation_id: int) -> int:
+        """Count conversation rows with id > `conversation_id`.
+
+        Used by the compression trigger to ask "how many raw turns have
+        accumulated since the last summary cutoff?". Passing 0 counts the
+        entire table (useful before the first summary exists).
+        """
+        cur = self.conn.execute(
+            "SELECT COUNT(*) FROM conversation WHERE id > ?", (conversation_id,)
+        )
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+    def get_conversation_turns_range(self, from_id: int, to_id: int) -> list:
+        """Fetch raw turns with from_id <= id <= to_id, oldest-first.
+
+        This is what the compressor feeds to the summarization kernel —
+        the raw turn stream that will be replaced by a summary row.
+        Callers should pass the bounds they intend to cover so the saved
+        summary's covers_from_id / covers_to_id match what was actually
+        compressed.
+        """
+        cur = self.conn.execute(
+            "SELECT id, role, content, image FROM conversation "
+            "WHERE id >= ? AND id <= ? ORDER BY id ASC",
+            (from_id, to_id),
+        )
+        return [
+            {"id": r[0], "role": r[1], "content": r[2], "image": r[3]}
+            for r in cur.fetchall()
+        ]
+
+    def get_newest_conversation_id(self) -> int | None:
+        """Return MAX(id) from conversation, or None if the table is empty."""
+        cur = self.conn.execute("SELECT MAX(id) FROM conversation")
+        row = cur.fetchone()
+        return int(row[0]) if row and row[0] is not None else None
 
     # ── Memory ────────────────────────────────────
 
@@ -163,5 +272,9 @@ class StateStore:
         return row[0] if row else default
 
     def clear_conversation(self):
+        # Also wipe the summary table so the compressor doesn't serve a
+        # [PRIOR CONTEXT] block pointing at id-ranges that no longer exist.
+        # The table is recreated lazily on the next save_conversation_summary.
         with self.conn:
             self.conn.execute("DELETE FROM conversation")
+            self.conn.execute("DELETE FROM conversation_summary")

@@ -1,0 +1,54 @@
+{
+  "name": "Servo",
+  "version": "0.6.10",
+  "layers": {
+    "cortex": "runtime (core/loop.py)",
+    "persona": "identity (codex/persona_core.md) + overlays (roles.json)",
+    "codex": "canonical truth (codex/)"
+  },
+  "loop": ["PERCEIVE", "CONTEXTUALIZE", "REASON", "ACT", "INTEGRATE", "OBSERVE"],
+  "directives": ["done", "chain", "continue", "tool_confirm", "snooze"],
+  "roles": {
+    "default": "servo",
+    "keys": ["servo", "sentinel", "analyst", "architect", "orchestrator", "scholar", "guardian"],
+    "overlay_fields": ["voice_overlay", "format_bias", "risk_tolerance"],
+    "selection": "priority asc, then most-overdue desc"
+  },
+  "stack": {
+    "ui": "PySide6",
+    "llm": "Ollama (localhost:11434)",
+    "state": "SQLite(WAL) + ChromaDB"
+  },
+  "workspace_policy": {
+    "agent_writes_to": ["workspace/<model_safe_name>/", "codex/"],
+    "default_scratch": "workspace/<model_safe_name>/",
+    "codex_writers": {
+      "skill_map.md": "Orchestrator (via proposal)",
+      "role_manifests/*.md": "Orchestrator (via proposal)",
+      "decisions.md": "any role (append-only)",
+      "history.md": "any role (append-only)",
+      "persona_core.md": "Kevin only",
+      "log_digest.md":   "tool-only (log_summarizer, append-only)"
+    },
+    "workspace_writers": {
+      "architecture_review_<v>.md": "Scholar (bumps prior version to old_stuff/)",
+      "change_proposal_<v>.md":     "Architect or Orchestrator",
+      "critique_<v>.md":            "Analyst",
+      "old_stuff/":                 "Scholar archives closed proposals + stale reviews; Architect archives superseded reviews"
+    }
+  },
+  "memory_summarization": {
+    "phase":       "2 conversation-history compression",
+    "scope":       "cold logs (>24h) + conversation history at INTEGRATE; kernel shared",
+    "kernel":      "tools/summarizer.py",
+    "drivers": {
+      "cold_logs":            "tools/log_summarizer.py",
+      "conversation_history": "core/history_compressor.py"
+    },
+    "destinations": {
+      "cold_logs":            "codex/log_digest.md",
+      "conversation_history": "SQLite conversation_summary table -> [PRIOR CONTEXT] block in system prompt; covered raw turns filtered from message list"
+    },
+    "trigger_conversation":   "INTEGRATE fires maybe_compress() when uncompressed turns >= 2 * conversation_history cap (scales with hardware throttle)"
+  }
+}

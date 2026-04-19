@@ -103,9 +103,10 @@ class MainWindow(QMainWindow):
         self.loop.tool_called.connect(self.loop_panel.on_tool_called)
         self.loop.response_ready.connect(self.chat_panel.on_response_ready)
         self.loop.response_ready.connect(self._on_response_ready)
+        self.loop.active_role_changed.connect(self.chat_panel.on_active_role_changed)
         self.loop.error_occurred.connect(self.chat_panel.on_error)
         self.loop.error_occurred.connect(self._on_error)
-        self.loop.context_limit_changed.connect(self.loop_panel.on_context_limit_changed)
+        self.loop.conversation_history_changed.connect(self.loop_panel.on_conversation_history_changed)
         self.loop.goals_changed.connect(self.tool_panel.on_goals_changed)
 
         self.loop.stream_started.connect(self.tool_panel.on_stream_started)
@@ -119,7 +120,7 @@ class MainWindow(QMainWindow):
         )
 
         self.loop_panel.context_spin.valueChanged.connect(
-            lambda val: setattr(self.loop, "context_limit", val)
+            lambda val: setattr(self.loop, "conversation_history", val)
         )
         self.loop_panel.temp_spin.valueChanged.connect(
             lambda val: setattr(self.ollama, "temperature", val)
@@ -131,7 +132,7 @@ class MainWindow(QMainWindow):
             lambda text: setattr(self.loop, "verbosity", text)
         )
         self.loop_panel.loop_limit_spin.valueChanged.connect(
-            lambda val: setattr(self.loop, "loop_limit", val)
+            lambda val: setattr(self.loop, "chain_limit", val)
         )
         self.loop_panel.continuous_check.toggled.connect(
             lambda checked: setattr(self.loop, "continuous_mode", checked)
@@ -204,10 +205,10 @@ class MainWindow(QMainWindow):
                             self.loop_panel.temp_spin.setValue(float(cfg["temperature"]))
                         if "max_tokens" in cfg:
                             self.loop_panel.tokens_spin.setValue(int(cfg["max_tokens"]))
-                        if "context_limit" in cfg:
-                            self.loop_panel.context_spin.setValue(int(cfg["context_limit"]))
-                        if "loop_limit" in cfg:
-                            self.loop_panel.loop_limit_spin.setValue(int(cfg["loop_limit"]))
+                        if "conversation_history" in cfg:
+                            self.loop_panel.context_spin.setValue(int(cfg["conversation_history"]))
+                        if "chain_limit" in cfg:
+                            self.loop_panel.loop_limit_spin.setValue(int(cfg["chain_limit"]))
                         if "verbosity" in cfg:
                             self.loop_panel.verbosity_combo.setCurrentText(str(cfg["verbosity"]))
             except Exception as e:

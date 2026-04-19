@@ -51,8 +51,8 @@ def _read_working_memory() -> str:
 
 def _find_notes_folder() -> Path:
     """
-    Locate the model's notes folder. Falls back to a generic snapshots/ folder
-    in the workspace root if the model-specific folder can't be determined.
+    Locate the model's scratch folder under workspace/. Falls back to a generic
+    snapshots/ folder at the workspace root if the model can't be determined.
     """
     try:
         import sqlite3 as _sq
@@ -64,12 +64,12 @@ def _find_notes_folder() -> Path:
             conn.close()
             if row and row[0]:
                 safe_name = row[0].replace(":", "_").replace(".", "_")
-                folder = _ROOT / f"{safe_name}_notes"
+                folder = _ROOT / "workspace" / safe_name
                 folder.mkdir(parents=True, exist_ok=True)
                 return folder
     except Exception:
         pass
-    fallback = _ROOT / "snapshots"
+    fallback = _ROOT / "workspace" / "_snapshots"
     fallback.mkdir(parents=True, exist_ok=True)
     return fallback
 

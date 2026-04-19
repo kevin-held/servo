@@ -88,6 +88,44 @@ def _get_error_summary() -> dict:
         return {"errors_last_hour": -1, "recent_errors": []}
 
 
+def _get_loop_telemetry() -> dict:
+    """
+    Pull truncation / auto-continue / throttle counters from the running CoreLoop.
+    Returns empty dict if the loop isn't reachable (e.g. called outside the GUI).
+    """
+    try:
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is None:
+            return {}
+        loop = None
+        for widget in app.topLevelWidgets():
+            if hasattr(widget, "loop"):
+                loop = widget.loop
+                break
+        if loop is None:
+            return {}
+        return {
+            "truncations_total":            getattr(loop, "truncations_total", 0),
+            "followup_truncations_total":   getattr(loop, "followup_truncations_total", 0),
+            "auto_continues_total":         getattr(loop, "auto_continues_total", 0),
+            "auto_continue_give_ups_total": getattr(loop, "auto_continue_give_ups_total", 0),
+            "hardware_throttle_total":      getattr(loop, "hardware_throttle_total", 0),
+            "user_interrupts_total":        getattr(loop, "user_interrupts_total", 0),
+            "history_compressions_total":   getattr(loop, "history_compressions_total", 0),
+            "max_auto_continues":           getattr(loop, "max_auto_continues", 2),
+            "conversation_history":         getattr(loop, "conversation_history", 0),
+            "default_conversation_history": getattr(loop, "default_conversation_history", 0),
+            "chain_limit":                  getattr(loop, "chain_limit", 0),
+            "autonomous_loop_limit":        getattr(loop, "autonomous_loop_limit", 0),
+            "grace_cycle_count":            getattr(loop, "_grace_cycle_count", 0),
+            "max_consecutive_grace":        getattr(loop, "max_consecutive_grace", 0),
+            "autonomous_cycle_count":       getattr(loop, "_autonomous_cycle_count", 0),
+        }
+    except Exception:
+        return {}
+
+
 def _get_tool_health() -> dict:
     """Scan tool registry to report loaded, disabled, and failed tools."""
     try:
@@ -142,6 +180,7 @@ def execute() -> str:
     hw = _get_hardware_status()
     errors = _get_error_summary()
     tools = _get_tool_health()
+    loop_telemetry = _get_loop_telemetry()
 
     payload = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -157,6 +196,7 @@ def execute() -> str:
             },
             "errors": errors,
             "tools": tools,
+            "loop_telemetry": loop_telemetry if loop_telemetry else "(unavailable)",
         },
     }
 

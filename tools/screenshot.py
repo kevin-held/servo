@@ -1,19 +1,27 @@
 import os
+import sys
 import base64
 from datetime import datetime
 from pathlib import Path
+
+# Route every model-provided path through the single-anchor resolver.
+_ROOT = Path(__file__).parent.parent.resolve()
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+from core.path_utils import resolve, PathRejectedError, project_relative
 
 TOOL_NAME        = "screenshot"
 TOOL_DESCRIPTION = "Capture a screenshot of the screen and save it to a file. Returns the saved file path so it can be attached or inspected."
 TOOL_ENABLED     = True
 TOOL_SCHEMA      = {
-    "output_path": {"type": "string", "description": "File path where the screenshot should be saved. Defaults to a timestamped file in the workspace screenshots/ folder. Always use forward slashes."},
+    "output_path": {"type": "string",
+                    "description": "Project-root-relative path where the screenshot should be saved. "
+                                   "Example: 'workspace/gemma4_26b/screenshot.png'. "
+                                   "Leave empty to auto-generate a timestamped path under workspace/screenshots/. "
+                                   "Absolute paths and drive letters are rejected."},
     "img_format":  {"type": "string", "description": "Image format: 'png' (default) or 'jpg'."},
     "region":      {"type": "string", "description": "Optional screen region to capture as 'x1,y1,x2,y2' (e.g. '0,0,1920,1080'). Omit for full screen."},
 }
-
-# Workspace sandbox root — mirrors boundary in filesystem.py
-_SANDBOX = Path(__file__).parent.parent.resolve()
 
 
 def execute(output_path: str = "", img_format: str = "png", region: str = "") -> str:
@@ -41,16 +49,18 @@ def execute(output_path: str = "", img_format: str = "png", region: str = "") ->
         save_format = "JPEG" if img_format in ("jpg", "jpeg") else "PNG"
         ext = "jpg" if img_format in ("jpg", "jpeg") else "png"
 
-        # Resolve output path — default to workspace/screenshots/
+        # Resolve output path — default to workspace/screenshots/ if blank.
         if not output_path:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_path = str(_SANDBOX / "screenshots" / f"screenshot_{timestamp}.{ext}")
+            output_path = f"workspace/screenshots/screenshot_{timestamp}.{ext}"
 
-        resolved = Path(output_path).resolve()
-
-        # Sandbox enforcement
-        if not str(resolved).lower().startswith(str(_SANDBOX).lower()):
-            return f"Error: Access denied. '{output_path}' is outside the allowed workspace sandbox."
+        # Route through the single-anchor resolver. Rejection text is
+        # surfaced to the model as the tool output — see decisions.md
+        # D-20260417-09.
+        try:
+            resolved = resolve(output_path)
+        except PathRejectedError as e:
+            return f"Error: {e}"
 
         # Parse optional region
         bbox = None
@@ -74,7 +84,7 @@ def execute(output_path: str = "", img_format: str = "png", region: str = "") ->
         w, h = screenshot.size
         return (
             f"Screenshot captured successfully!\n"
-            f"Saved to: {resolved}\n"
+            f"Saved to: {project_relative(resolved)}\n"
             f"Format: {save_format}\n"
             f"Size: {w}x{h} px"
         )

@@ -1,0 +1,14 @@
+# Workspace contents are agent scratch — useful at runtime, not canonical.
+# Keep folder shape (each <model>/) tracked; ignore noisy bulk content.
+
+*/screenshots/
+*/old_stuff/
+*/snapshots/
+
+# Bulk text/log dumps inside workspace (per-model)
+*/stress_test_*.txt
+*/rapid_test_*.txt
+*/large_payload_*.txt
+*/multi_part_payload_*.txt
+*/payload_test*.txt
+*/code_truncation_test*.py

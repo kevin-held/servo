@@ -31,13 +31,30 @@ TOOL_SCHEMA      = {
     },
     "role_name": {
         "type": "string",
-        "description": "(For enable/disable) The role key: sentinel, scholar, architect, analyst, orchestrator, guardian.",
+        "description": "(For enable/disable) The role key: sentinel, analyst, architect, orchestrator, scholar, guardian. 'servo' is the default identity and is not schedulable.",
     },
 }
 
 _ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _ROLES_FILE = os.path.join(_ROOT, "roles.json")
 _GOALS_FILE = os.path.join(_ROOT, "goals.json")
+
+# Non-schedulable roles — identity overlays that never enter the goal queue.
+# 'servo' is the default no-overlay identity and must never be elected as a
+# due role (its schedule_minutes is 0 and its task is empty by design).
+_NON_SCHEDULABLE = {"servo"}
+
+
+def _is_schedulable(role_name: str, role: dict) -> bool:
+    """A role is schedulable only if it's not in the deny-list, has a
+    non-empty task, and has a positive schedule."""
+    if role_name in _NON_SCHEDULABLE:
+        return False
+    if not (role.get("task") or "").strip():
+        return False
+    if int(role.get("schedule_minutes", 0)) <= 0:
+        return False
+    return True
 
 
 def _load_roles() -> dict:
@@ -118,6 +135,13 @@ def execute(action: str, role_name: str = "") -> str:
         synced = 0
         for key, role in roles.items():
             goal_key = _goal_key(key)
+            # Non-schedulable roles (like servo) must never have a goal.
+            # Prune any stale goal that was created before this guard existed.
+            if not _is_schedulable(key, role):
+                if goal_key in goals:
+                    goals = _remove_goal_for_role(key, goals)
+                    synced += 1
+                continue
             if role.get("enabled") and goal_key not in goals:
                 goals = _create_goal_for_role(key, role, goals)
                 synced += 1
@@ -133,8 +157,14 @@ def execute(action: str, role_name: str = "") -> str:
 
     role_name = role_name.lower().strip()
     if role_name not in roles:
-        valid = ", ".join(roles.keys())
+        valid = ", ".join(k for k in roles.keys() if k not in _NON_SCHEDULABLE)
         return f"Error: Unknown role '{role_name}'. Valid roles: {valid}"
+
+    if role_name in _NON_SCHEDULABLE:
+        return (
+            f"Error: '{role_name}' is a non-schedulable identity overlay, not a task-driven role. "
+            "It is always available as the default voice and cannot be enabled or disabled."
+        )
 
     role = roles[role_name]
     goals = _load_goals()

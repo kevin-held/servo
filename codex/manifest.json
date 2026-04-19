@@ -1,0 +1,103 @@
+{
+  "name": "Servo",
+  "lineage": "Cybernetic Actuator",
+  "version": "0.6.10",
+  "description": "An autonomous local-AI executive layer. One persistent process that perceives, reasons, and acts on its own environment through a role-based overlay system, organized into three canonical layers: Cortex (ephemeral runtime), Persona (identity + overlays), Codex (on-disk truth).",
+  "layers": {
+    "cortex":  "The six-step core loop (core/loop.py). Ephemeral runtime; allowed to lose state on restart. Reference implementation, expected to be obsoleted by future models with embedded schedulers.",
+    "persona": "A single identity (Servo) expressed through role overlays. Invariant identity lives in codex/persona_core.md and is injected into the system prompt as the [IDENTITY] block on every cycle. Role overlays (roles.json) supply voice/format/risk fields under [ACTIVE ROLE]. Permanent, portable, backend-agnostic.",
+    "codex":   "The canonical on-disk truth — persona_core, manifest, skill_map, role_overlays, role_manifests, lexicon, decisions, glossary, history, rejected_proposals. Role-writable: any role may append to decisions and history; Orchestrator proposes updates to skill_map and role_manifests/ via change proposals. persona_core is hand-edited by Kevin only. Architecture reviews are model-scoped and live under workspace/<model>/ (see workspace_policy)."
+  },
+  "core_loop": {
+    "steps": [
+      {"id": 1, "name": "PERCEIVE",      "summary": "Classify the current input (user message, chained tool payload, goal-due prod, system event)."},
+      {"id": 2, "name": "CONTEXTUALIZE", "summary": "Load conversation_history turns from SQLite, relevant episodic memory from Chroma, available tools, active goals, working memory."},
+      {"id": 3, "name": "REASON",        "summary": "Call the model with system prompt + messages. Handle truncation via auto-continue (bounded by max_auto_continues)."},
+      {"id": 4, "name": "ACT",           "summary": "Execute a tool if one was requested, feed the result back for a follow-up response, handle truncation again."},
+      {"id": 5, "name": "INTEGRATE",     "summary": "Persist turns and tool outcomes, update working memory, emit telemetry, decide the next directive."},
+      {"id": 6, "name": "OBSERVE",       "summary": "Passive watch for external triggers (time-based goals, user input, file changes) while doing minimal work, then GOTO 1."}
+    ],
+    "directives": ["done", "chain", "continue", "tool_confirm", "snooze"]
+  },
+  "roles": {
+    "summary": "One personality (Servo) expressed through role-specific voice overlays. When no role is active, the agent is Servo with no overlay applied — this is represented by the explicit 'servo' entry in roles.json.",
+    "keys": ["servo", "sentinel", "analyst", "architect", "orchestrator", "scholar", "guardian"],
+    "default": "servo",
+    "overlay_fields": ["voice_overlay", "format_bias", "risk_tolerance"],
+    "identity_injection": "codex/persona_core.md is loaded (mtime-cached) and inserted as [IDENTITY]. The active role's overlay fields are rendered as [ACTIVE ROLE]. When no role is active, the servo entry is used so the identity + overlay blocks are always present.",
+    "persona_update_mechanism": "TODO — no automated curator yet. codex/persona_core.md is hand-edited by Kevin."
+  },
+  "stack": {
+    "ui":       "PySide6 (QThread-based loop)",
+    "llm":      "Ollama HTTP (http://localhost:11434) — controls num_predict and conversation_history only; num_ctx is not touched",
+    "state":    "SQLite (WAL) for conversation/memory/trace/state; ChromaDB for episodic vector memory (auto-pruned to 1000 entries)",
+    "logging":  "Sentinel JSONL with rotation (5 MB threshold)",
+    "tools":    "Dynamic registry via importlib. Contract: TOOL_NAME, TOOL_DESCRIPTION, TOOL_ENABLED, TOOL_SCHEMA, execute(...)"
+  },
+  "hardware_policy": {
+    "critical_gate": "Critical requires BOTH RAM >= 95% AND VRAM >= 95% (AND-gate in core/hardware.py).",
+    "throttle_action": "Clear KV cache, reduce conversation_history by 2 with a model-appropriate floor (default_conversation_history // 2).",
+    "restore_action":  "After 5 consecutive stable cycles, restore conversation_history to the model default.",
+    "rejected":        ["VRAM hysteresis (CP-20260416-03)"]
+  },
+  "runtime_config": {
+    "tunable_via_system_config": ["temperature", "max_tokens", "conversation_history", "chain_limit", "autonomous_loop_limit", "max_auto_continues", "verbosity"],
+    "immutable_at_runtime":      ["num_ctx (intentionally not exposed)"],
+    "loop_control": {
+      "chain_limit":           "Max chained tool calls within one user turn (when continuous_mode is off).",
+      "autonomous_loop_limit": "Max continuous-mode re-loops before pausing for user review. 0 = unbounded.",
+      "max_consecutive_grace": "Max consecutive no-progress grace cycles before forcing 'done' in continuous mode."
+    },
+    "interruption": {
+      "policy": "submit_input sets a cancel_event that interrupts an in-flight Ollama request mid-stream. The cycle catches ChatCancelled and re-enters PERCEIVE with the new user input. Partial responses are discarded."
+    },
+    "role_selection": {
+      "policy": "When multiple role_* goals are simultaneously due, pick by (priority asc, most-overdue desc). priority is a 1-5 field on each role in roles.json; default 5 if missing."
+    }
+  },
+  "workspace_policy": {
+    "model_workspace": "workspace/<model_safe_name>/ — per-model scratch (architecture_review_<v>.md, change_proposal_<v>.md, critique_<v>.md, calibration, screenshots, old_stuff). Scholar emits a new architecture_review_<v>.md each cycle and bumps the prior version to old_stuff/. Architect emits change_proposal_<v>.md; Analyst emits matching critique_<v>.md.",
+    "codex_path":      "codex/ — canonical truth (persona_core, manifest, manifest_compact, skill_map, role_overlays, role_manifests/, lexicon, decisions, glossary, history, rejected_proposals). Role-writable: any role may append to decisions and history; Orchestrator proposes updates to skill_map and role_manifests/ via change proposals. persona_core is hand-edited by Kevin only.",
+    "sandbox":         "Filesystem access (read and write) is scoped to the project directory. Autonomous writes are permitted in workspace/<model>/ (default scratch) and codex/ (canonical maintenance).",
+    "legacy_paths":    "Pre-0.4.0 <model>_notes/ folders have been consolidated under workspace/. Any remaining reference to *_notes/ is a migration bug."
+  },
+  "codex_contents": {
+    "persona_core.md":       "Invariant identity. Hand-edited by Kevin.",
+    "manifest.json":         "This file — machine-readable system description.",
+    "manifest_compact.json": "Compact variant for small-context models (conversation_history <= 8).",
+    "skill_map.md":          "Orchestrator-maintained role/layer index.",
+    "role_overlays.md":      "Canonical reference for the overlay system.",
+    "role_manifests/":       "Per-role detailed manifests (sentinel, analyst, architect, orchestrator, scholar).",
+    "lexicon.md":            "Servo-specific vocabulary.",
+    "decisions.md":          "Append-only architectural decision log.",
+    "glossary.md":           "Alphabetical term definitions.",
+    "history.md":            "Release-by-release narrative.",
+    "rejected_proposals.md": "Change proposals that were considered and rejected, with rationale.",
+    "log_digest.md":         "Append-only, machine-written digest of cold log entries. Maintained by tools/log_summarizer.py — Phase 5 pilot. Never hand-edit."
+  },
+  "memory_summarization": {
+    "phase":       "2 conversation-history compression",
+    "scope":       "cold log entries (age > 24h) + conversation history at INTEGRATE — kernel shared across all callers",
+    "drivers":     {
+      "cold_logs":             "tools/log_summarizer.py → tools/summarizer.py",
+      "conversation_history":  "core/history_compressor.py → tools/summarizer.py"
+    },
+    "destinations": {
+      "cold_logs":             "codex/log_digest.md",
+      "conversation_history":  "SQLite conversation_summary table — surfaced to the model as the [PRIOR CONTEXT] block in the system prompt; raw turns covered by the summary are filtered out of the Ollama message list"
+    },
+    "checkpoints": {
+      "cold_logs":             "state/.log_summarizer_checkpoint.json",
+      "conversation_history":  "conversation_summary.covers_to_id (latest row)"
+    },
+    "triggers": {
+      "cold_logs":             "Scholar invokes log_summarizer as a normal tool call on its 120-minute schedule",
+      "conversation_history":  "core/loop.py::_integrate calls history_compressor.maybe_compress() at end of each non-transient turn; fires when uncompressed turns >= 2 x conversation_history (scales with hardware throttle). Empty-response backoff: wait +conversation_history more turns before retry."
+    },
+    "owners": {
+      "cold_logs":             "Scholar",
+      "conversation_history":  "Cortex loop (automatic, non-destructive, no user toggle)"
+    },
+    "kernel":      "tools/summarizer.py exposes summarize(user_content, system_rules, *, model, timeout, max_input_chars) and detect_loaded_model(fallback). Owns Ollama client wiring, 300s chat timeout, 2s /api/ps probe, tail-preserve last-resort trim, empty-response passthrough. Does NOT own prompt content, input shaping, destination, or the agent tool contract. See decisions.md D-20260418-10 (Phase 1 extraction) and D-20260419-01 (Phase 2 conversation hook)."
+  }
+}

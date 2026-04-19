@@ -1,0 +1,41 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+
+# --- Runtime / state ---
+state/*.db
+state/*.db-*
+state/chroma/
+logs/*.jsonl
+logs/*.log
+*.log
+
+# --- Agent scratch (not canonical) ---
+workspace/*/screenshots/
+workspace/*/old_stuff/
+snapshots/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Legacy scaffold (pre-Cowork) ---
+mnt/
+
+# --- OneDrive / sync artefacts ---
+~$*
+*.tmp

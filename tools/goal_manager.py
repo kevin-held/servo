@@ -11,10 +11,18 @@ import time
 # Let's use goals.json in the workspace root for simplicity and persistence.
 
 TOOL_NAME        = "goal_manager"
-TOOL_DESCRIPTION = "Manage autonomous goals. Priority 1 goes to 'finite' goals (with clear criteria to be marked complete). Priority 2 goes to 'continuous' (never-ending maintenance). Always complete a finite goal when its criteria are successfully met."
+TOOL_DESCRIPTION = ("Manage autonomous goals. Priority 1 goes to 'finite' goals (with clear criteria to be "
+                    "marked complete). Priority 2 goes to 'continuous' (never-ending maintenance). "
+                    "Always 'complete' a finite goal when its criteria are met. Call 'mark_done' on a "
+                    "continuous goal after you have just executed its work for this cycle — this marks "
+                    "the goal as having been run and snoozes it until its next scheduled slot.")
 TOOL_ENABLED     = True
 TOOL_SCHEMA      = {
-    "action": {"type": "string", "enum": ["add", "remove", "complete", "list", "mark_run", "update_schedule"], "description": "The action to perform"},
+    "action": {"type": "string",
+               "enum": ["add", "remove", "complete", "list", "mark_done", "mark_run", "update_schedule"],
+               "description": "The action to perform. 'mark_done' records that a continuous goal has just "
+                              "been run for this cycle (snoozes it). 'mark_run' is the legacy alias for "
+                              "'mark_done' and still works but is deprecated — prefer 'mark_done'."},
     "goal_name": {"type": "string", "description": "A short unique name for the goal (e.g. 'compile_code') - not needed for 'list' action"},
     "goal_type": {"type": "string", "enum": ["finite", "continuous"], "description": "Required for 'add': is it a finite task or continuous background task?"},
     "description": {"type": "string", "description": "Required for 'add' or 'update_schedule'(optional): clear instructions on what needs to be achieved."},
@@ -94,13 +102,19 @@ def execute(action: str, goal_name: str = "", goal_type: str = "", description: 
             return f"Successfully removed goal: {goal_name}"
         return f"Error: Goal '{goal_name}' not found."
         
-    elif action == "mark_run":
+    elif action in ("mark_done", "mark_run"):
+        # 'mark_run' is a deprecated alias kept for one release so existing
+        # autonomous goals that hardcode the old action name keep working.
+        # Semantics: record that the continuous goal was just executed this
+        # cycle (updates last_run = now), which snoozes it for schedule_minutes.
         if goal_name in goals:
             if goals[goal_name]["type"] != "continuous":
                 return f"Error: '{goal_name}' is not a continuous goal."
             goals[goal_name]["last_run"] = time.time()
             _save_goals(goals)
-            return f"Successfully snoozed continuous goal: {goal_name}"
+            deprecation = (" [note: 'mark_run' is deprecated — use 'mark_done']"
+                           if action == "mark_run" else "")
+            return f"Marked '{goal_name}' as done for this cycle — snoozed for {goals[goal_name].get('schedule_minutes', 60)} minutes.{deprecation}"
         return f"Error: Goal '{goal_name}' not found."
         
     elif action == "update_schedule":

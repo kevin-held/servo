@@ -1,5 +1,0 @@
-PART_1_START
-[DATA_BLOCK_A]
-This is the first part of a multi-part payload test. We are testing sequential write stability. PART_2_START
-[DATA_BLOCK_B]
-This is the second part of the payload. We are appending content to the same file to test sequential write integrity. PART_2_END

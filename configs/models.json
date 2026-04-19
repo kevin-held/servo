@@ -3,78 +3,78 @@
     "qwen3.5:9b": {
       "temperature": 0.6,
       "max_tokens": 2048,
-      "context_limit": 5,
-      "loop_limit": 3,
+      "conversation_history": 5,
+      "chain_limit": 3,
       "verbosity": "Normal"
     },
     "qwen3.5:27b": {
       "temperature": 0.6,
       "max_tokens": 4096,
-      "context_limit": 10,
-      "loop_limit": 5,
+      "conversation_history": 10,
+      "chain_limit": 5,
       "verbosity": "Normal"
     },
     "deepseek-r1:14b": {
       "temperature": 0.5,
       "max_tokens": 4096,
-      "context_limit": 10,
-      "loop_limit": 5,
+      "conversation_history": 10,
+      "chain_limit": 5,
       "verbosity": "Standard"
     },
     "deepseek-r1:32b": {
       "temperature": 0.6,
       "max_tokens": 8192,
-      "context_limit": 10,
-      "loop_limit": 6,
+      "conversation_history": 10,
+      "chain_limit": 6,
       "verbosity": "Detailed"
     },
     "mistral-nemo:latest": {
       "temperature": 0.3,
       "max_tokens": 4096,
-      "context_limit": 10,
-      "loop_limit": 5,
+      "conversation_history": 10,
+      "chain_limit": 5,
       "verbosity": "Normal"
     },
     "llama3.1:8b": {
       "temperature": 0.4,
       "max_tokens": 4096,
-      "context_limit": 10,
-      "loop_limit": 5,
+      "conversation_history": 10,
+      "chain_limit": 5,
       "verbosity": "Normal"
     },
     "mixtral:latest": {
       "temperature": 0.5,
       "max_tokens": 4096,
-      "context_limit": 10,
-      "loop_limit": 5,
+      "conversation_history": 10,
+      "chain_limit": 5,
       "verbosity": "Standard"
     },
     "gemma2:27b": {
       "temperature": 0.4,
       "max_tokens": 4096,
-      "context_limit": 10,
-      "loop_limit": 4,
+      "conversation_history": 10,
+      "chain_limit": 4,
       "verbosity": "Normal"
     },
     "gemma:latest": {
       "temperature": 0.4,
       "max_tokens": 2048,
-      "context_limit": 8,
-      "loop_limit": 3,
+      "conversation_history": 8,
+      "chain_limit": 3,
       "verbosity": "Concise"
     },
     "gemma4:26b": {
       "temperature": 0.5,
       "max_tokens": 4096,
-      "context_limit": 10,
-      "loop_limit": 5,
+      "conversation_history": 10,
+      "chain_limit": 5,
       "verbosity": "Normal"
     },
     "gemma4:206b": {
       "temperature": 0.5,
       "max_tokens": 8192,
-      "context_limit": 15,
-      "loop_limit": 6,
+      "conversation_history": 15,
+      "chain_limit": 6,
       "verbosity": "Detailed"
     }
   }

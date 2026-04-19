@@ -16,7 +16,7 @@ STEP_COLORS = {
     LoopStep.REASON:        "#FF9800",
     LoopStep.ACT:           "#F44336",
     LoopStep.INTEGRATE:     "#9C27B0",
-    LoopStep.IDLE:          "#546E7A",
+    LoopStep.OBSERVE:       "#546E7A",
 }
 
 STEP_ORDER = [
@@ -25,6 +25,7 @@ STEP_ORDER = [
     LoopStep.REASON,
     LoopStep.ACT,
     LoopStep.INTEGRATE,
+    LoopStep.OBSERVE,
 ]
 
 
@@ -108,7 +109,7 @@ class LoopPanel(QWidget):
         grid = QGridLayout()
         grid.setSpacing(8)
 
-        lbl = QLabel("Context Limit:")
+        lbl = QLabel("Conversation History:")
         lbl.setStyleSheet("color: #888; font-size: 11px;")
         self.context_spin = QSpinBox()
         self.context_spin.setRange(1, 20)
@@ -138,7 +139,7 @@ class LoopPanel(QWidget):
         self.verbosity_combo.setCurrentText("Normal")
         self.verbosity_combo.setStyleSheet("background: #222; color: #ccc; border: 1px solid #333;")
 
-        lbl5 = QLabel("Loop Limit:")
+        lbl5 = QLabel("Chain Limit:")
         lbl5.setStyleSheet("color: #888; font-size: 11px;")
         self.loop_limit_spin = QSpinBox()
         self.loop_limit_spin.setRange(1, 10)
@@ -260,7 +261,7 @@ class LoopPanel(QWidget):
         tool_item.setExpanded(True)
 
     @Slot(int)
-    def on_context_limit_changed(self, limit: int):
+    def on_conversation_history_changed(self, limit: int):
         self.context_spin.blockSignals(True)
         self.context_spin.setValue(limit)
         self.context_spin.blockSignals(False)

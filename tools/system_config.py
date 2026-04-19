@@ -2,20 +2,22 @@
 system_config — Allow the agent to inspect and adjust its own runtime configuration.
 
 Operations:
-  - get:  Return current model config (temperature, max_tokens, context_limit, etc.)
+  - get:  Return current model config (temperature, max_tokens, conversation_history, etc.)
   - set:  Modify a specific parameter at runtime
 """
 
 import json
-import sys
 from pathlib import Path
 
 TOOL_NAME        = "system_config"
 TOOL_DESCRIPTION = (
     "Inspect or adjust the agent's own runtime configuration. "
-    "Use 'get' to see current settings (temperature, max_tokens, context_limit, loop_limit). "
+    "Use 'get' to see current settings (temperature, max_tokens, conversation_history, "
+    "chain_limit, autonomous_loop_limit, max_auto_continues, verbosity). "
     "Use 'set' to change a parameter at runtime — useful when responses are being truncated "
-    "(increase max_tokens) or when hardware is under pressure (decrease context_limit)."
+    "(increase max_tokens or max_auto_continues), when hardware is under pressure "
+    "(decrease conversation_history), or when continuous-mode runs should auto-pause "
+    "after N cycles (set autonomous_loop_limit > 0)."
 )
 TOOL_ENABLED     = True
 TOOL_SCHEMA      = {
@@ -26,7 +28,15 @@ TOOL_SCHEMA      = {
     },
     "parameter": {
         "type": "string",
-        "enum": ["temperature", "max_tokens", "context_limit", "loop_limit", "verbosity"],
+        "enum": [
+            "temperature",
+            "max_tokens",
+            "conversation_history",
+            "chain_limit",
+            "autonomous_loop_limit",
+            "max_auto_continues",
+            "verbosity",
+        ],
         "description": "(For 'set') The parameter name to modify.",
     },
     "value": {
@@ -37,10 +47,12 @@ TOOL_SCHEMA      = {
 
 # Safe bounds to prevent the model from setting dangerous values
 _BOUNDS = {
-    "temperature":   (0.0, 1.5),
-    "max_tokens":    (256, 16384),
-    "context_limit": (3, 30),
-    "loop_limit":    (1, 20),
+    "temperature":             (0.0, 1.5),
+    "max_tokens":              (256, 16384),
+    "conversation_history":    (3, 30),
+    "chain_limit":             (1, 20),
+    "autonomous_loop_limit":   (0, 50),   # 0 = unbounded continuous mode
+    "max_auto_continues":      (0, 5),
 }
 
 _VERBOSITY_OPTIONS = {"Concise", "Normal", "Standard", "Detailed"}
@@ -72,14 +84,16 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
 
     if operation == "get":
         config = {
-            "model":         loop.ollama.model,
-            "temperature":   loop.ollama.temperature,
-            "max_tokens":    loop.ollama.num_predict,
-            "context_limit": loop.context_limit,
-            "loop_limit":    loop.loop_limit,
-            "verbosity":     loop.verbosity,
-            "continuous_mode": loop.continuous_mode,
-            "stream_enabled":  loop.stream_enabled,
+            "model":                 loop.ollama.model,
+            "temperature":           loop.ollama.temperature,
+            "max_tokens":            loop.ollama.num_predict,
+            "conversation_history":  loop.conversation_history,
+            "chain_limit":           loop.chain_limit,
+            "autonomous_loop_limit": loop.autonomous_loop_limit,
+            "max_auto_continues":    loop.max_auto_continues,
+            "verbosity":             loop.verbosity,
+            "continuous_mode":       loop.continuous_mode,
+            "stream_enabled":        loop.stream_enabled,
         }
         return json.dumps(config, indent=2)
 
@@ -108,21 +122,39 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
                 loop.ollama.num_predict = new_val
                 return f"✓ max_tokens set to {new_val}"
 
-            elif parameter == "context_limit":
+            elif parameter == "conversation_history":
                 new_val = int(value)
-                lo, hi = _BOUNDS["context_limit"]
+                lo, hi = _BOUNDS["conversation_history"]
                 if not (lo <= new_val <= hi):
-                    return f"Error: context_limit must be between {lo} and {hi}. Got {new_val}."
-                loop.context_limit = new_val
-                return f"✓ context_limit set to {new_val}"
+                    return f"Error: conversation_history must be between {lo} and {hi}. Got {new_val}."
+                loop.conversation_history = new_val
+                return f"✓ conversation_history set to {new_val}"
 
-            elif parameter == "loop_limit":
+            elif parameter == "chain_limit":
                 new_val = int(value)
-                lo, hi = _BOUNDS["loop_limit"]
+                lo, hi = _BOUNDS["chain_limit"]
                 if not (lo <= new_val <= hi):
-                    return f"Error: loop_limit must be between {lo} and {hi}. Got {new_val}."
-                loop.loop_limit = new_val
-                return f"✓ loop_limit set to {new_val}"
+                    return f"Error: chain_limit must be between {lo} and {hi}. Got {new_val}."
+                loop.chain_limit = new_val
+                return f"✓ chain_limit set to {new_val}"
+
+            elif parameter == "autonomous_loop_limit":
+                new_val = int(value)
+                lo, hi = _BOUNDS["autonomous_loop_limit"]
+                if not (lo <= new_val <= hi):
+                    return f"Error: autonomous_loop_limit must be between {lo} and {hi}. Got {new_val}."
+                loop.autonomous_loop_limit = new_val
+                if new_val == 0:
+                    return "✓ autonomous_loop_limit set to 0 (unbounded continuous mode)"
+                return f"✓ autonomous_loop_limit set to {new_val} cycles before pause"
+
+            elif parameter == "max_auto_continues":
+                new_val = int(value)
+                lo, hi = _BOUNDS["max_auto_continues"]
+                if not (lo <= new_val <= hi):
+                    return f"Error: max_auto_continues must be between {lo} and {hi}. Got {new_val}."
+                loop.max_auto_continues = new_val
+                return f"✓ max_auto_continues set to {new_val}"
 
             elif parameter == "verbosity":
                 if value not in _VERBOSITY_OPTIONS:
@@ -131,7 +163,11 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
                 return f"✓ verbosity set to '{value}'"
 
             else:
-                return f"Error: Unknown parameter '{parameter}'. Valid: temperature, max_tokens, context_limit, loop_limit, verbosity."
+                return (
+                    f"Error: Unknown parameter '{parameter}'. "
+                    "Valid: temperature, max_tokens, conversation_history, chain_limit, "
+                    "autonomous_loop_limit, max_auto_continues, verbosity."
+                )
 
         except (ValueError, TypeError) as e:
             return f"Error: Invalid value '{value}' for {parameter}: {e}"

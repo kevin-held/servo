@@ -151,8 +151,38 @@ class LogPanel(QWidget):
         self._buffer = deque(maxlen=500)  # ring buffer of parsed entries
         self._last_file_size = 0
 
+        # Dedupe tracker for the dual-ingress problem.
+        # Every event that goes through core.loop._slog lands in this panel
+        # twice — once via the CoreLoop.log_event Qt signal, and a second time
+        # when QFileSystemWatcher notices sentinel.jsonl grew. Same story for
+        # state.add_trace's INFO mirror (no signal, but the file watcher still
+        # fires). The file on disk has one line per event; the widget was
+        # rendering each of them twice. We can't drop the file watcher (INFO
+        # entries from state.add_trace have no direct signal path) and we
+        # can't drop the signal (lower latency, survives watcher drops), so
+        # we dedupe at render time by (level, component, message) within a
+        # short recency window. Identical events more than 2s apart are
+        # allowed through on the theory that a real duplicate that far apart
+        # is two distinct occurrences, not the dual-ingress echo.
+        self._recent_renders: deque = deque(maxlen=64)  # (key, monotonic_time)
+
         self._build_ui()
         self._setup_watchers()
+
+    # ── Dedupe ────────────────────────────────────────
+
+    def _is_duplicate(self, level: str, component: str, message: str) -> bool:
+        """True if an identical entry was rendered in the last 2s."""
+        key = (level, component, message)
+        now = time.monotonic()
+        # Prune entries older than the dedupe window.
+        while self._recent_renders and now - self._recent_renders[0][1] > 2.0:
+            self._recent_renders.popleft()
+        for k, _ts in self._recent_renders:
+            if k == key:
+                return True
+        self._recent_renders.append((key, now))
+        return False
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -355,6 +385,17 @@ class LogPanel(QWidget):
         if not self._level_filters.get(level, True):
             return
 
+        component = entry.get("component", "?")
+        message = entry.get("message", "")
+
+        # Dedupe: the signal and file-watcher ingress paths both deliver the
+        # same event. SentinelLogger is a singleton with a single file
+        # handle, so sentinel.jsonl has one line per event — any dupe in the
+        # widget comes from double-rendering. Skip if we already rendered an
+        # identical (level, component, message) within the last 2s.
+        if self._is_duplicate(level, component, message):
+            return
+
         color = LEVEL_COLORS.get(level, "#888")
 
         # Format: [HH:MM:SS] [LEVEL] [component] message
@@ -364,9 +405,6 @@ class LogPanel(QWidget):
             ts_display = ts_raw[11:19] if len(ts_raw) >= 19 else ts_raw
         except Exception:
             ts_display = "??:??:??"
-
-        component = entry.get("component", "?")
-        message = entry.get("message", "")
 
         formatted = f"[{ts_display}] [{level:<8}] [{component}] {message}"
 
@@ -380,6 +418,11 @@ class LogPanel(QWidget):
     def _refresh_display(self):
         """Re-render all buffered entries (used when filters change)."""
         self.console.clear()
+        # Clear dedupe tracker so re-rendered buffer entries aren't self-dropped.
+        # The buffer may legitimately contain back-to-back identical entries
+        # from different moments in the session; dedupe is for dual-ingress,
+        # not for the historical stream.
+        self._recent_renders.clear()
         for entry in self._buffer:
             self._render_entry(entry)
 

@@ -1,15 +1,31 @@
 import argparse
+import os
 import sys
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt
-from gui.main_window import MainWindow
 
 
 def main():
     parser = argparse.ArgumentParser(description="Servo AI Assistant")
     parser.add_argument("--test", action="store_true", help="Run tests instead of starting the GUI")
     parser.add_argument("--e2e", action="store_true", help="Launch GUI and run an automated End-to-End visual test")
+    parser.add_argument(
+        "--ollama-verbose",
+        action="store_true",
+        help="Mirror the Ollama streaming response to this shell's stderr. "
+             "Output bypasses the Sentinel log and the agent's context — "
+             "it is visible only in the terminal that launched main.py.",
+    )
     args = parser.parse_args()
+
+    # Set the env var BEFORE importing anything that constructs an OllamaClient,
+    # so the verbose flag is visible to the client's module-level reader on the
+    # very first request of the session.
+    if args.ollama_verbose:
+        os.environ["OLLAMA_VERBOSE"] = "1"
+
+    # Import after the env var is set — MainWindow → CoreLoop → OllamaClient.
+    from gui.main_window import MainWindow
 
     if args.test:
         import unittest

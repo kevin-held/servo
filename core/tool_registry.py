@@ -76,8 +76,8 @@ class ToolRegistry:
     # ── Execution ─────────────────────────────────
 
     # Centralized output cap — prevents any single tool from flooding the model's context window.
-    # ~8000 chars ≈ ~2000 tokens, leaving room for system prompt + conversation history.
-    MAX_TOOL_OUTPUT = 8000
+    # ~16000 chars ≈ ~4000 tokens, leaving room for system prompt + conversation history. -changed from 8000 by kevin
+    MAX_TOOL_OUTPUT = 16000
 
     def execute(self, name: str, args: dict) -> str:
         if name not in self._tools:
