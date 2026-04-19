@@ -12,18 +12,6 @@ class ChatPanel(QWidget):
 
     input_submitted = Signal(str, str)
 
-    # Role-based identity — maps the active role key to a role title + accent color
-    # Role keys are set by the core loop based on which continuous goal is due.
-    _ROLE_MAP = {
-        "servo":        ("Servo",        "#2196F3"),
-        "sentinel":     ("Sentinel",     "#FF5722"),
-        "scholar":      ("Scholar",      "#9C27B0"),
-        "architect":    ("Architect",    "#00BCD4"),
-        "analyst":      ("Analyst",      "#E91E63"),
-        "orchestrator": ("Orchestrator", "#FF9800"),
-        "guardian":     ("Guardian",     "#4CAF50"),
-    }
-    _DEFAULT_ROLE = ("Servo", "#2196F3")
 
     def __init__(self):
         super().__init__()
@@ -133,19 +121,6 @@ class ChatPanel(QWidget):
         row.addWidget(self.send_btn)
         layout.addLayout(row)
 
-        # Overlay indicator — shows which persona overlay is currently active.
-        # Defaults to "servo" (the no-overlay identity) and updates on each
-        # response or explicit active-role change.
-        self.overlay_label = QLabel("● servo")
-        self.overlay_label.setStyleSheet(
-            "color: #2196F3; font-size: 10px; font-weight: bold; "
-            "letter-spacing: 1px; padding: 2px 0 0 4px;"
-        )
-        self.overlay_label.setToolTip(
-            "Active persona overlay. Servo is the no-overlay default identity; "
-            "other overlays modulate voice and emphasis for scheduled role tasks."
-        )
-        layout.addWidget(self.overlay_label)
 
         self.setStyleSheet("QWidget { background: #111; }")
 
@@ -235,28 +210,11 @@ class ChatPanel(QWidget):
     @Slot(str, str)
     def on_response_ready(self, text: str, role_key: str = ""):
         self._last_assistant_response = text
-        role_name, role_color = self._ROLE_MAP.get(role_key, self._DEFAULT_ROLE)
-        self._append(role_name, text, role_color)
-        # Update the overlay indicator too — empty role_key means the servo default
-        self._update_overlay_label(role_key or "servo")
+        self._append("Assistant", text, "#e0e0e0")
         self.send_btn.setEnabled(True)
         self.chain_btn.setEnabled(True)
         self.input_field.setFocus()
 
-    @Slot(str)
-    def on_active_role_changed(self, role_key: str):
-        """External signal hook — updates the overlay label without rendering a chat entry."""
-        self._update_overlay_label(role_key or "servo")
-
-    def _update_overlay_label(self, role_key: str):
-        name, color = self._ROLE_MAP.get(role_key, self._DEFAULT_ROLE)
-        # Use lower-case role key for the dot label — mirrors manifest convention
-        display_key = role_key.lower() if role_key else "servo"
-        self.overlay_label.setText(f"● {display_key}")
-        self.overlay_label.setStyleSheet(
-            f"color: {color}; font-size: 10px; font-weight: bold; "
-            "letter-spacing: 1px; padding: 2px 0 0 4px;"
-        )
 
     @Slot(str)
     def on_error(self, error: str):

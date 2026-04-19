@@ -40,9 +40,7 @@ class CoreLoop(QThread):
     stream_started  = Signal()
     stream_finished = Signal()
     conversation_history_changed = Signal(int)
-    goals_changed                = Signal(object)
     log_event                    = Signal(str, str, str, str)  # level, component, message, context_json
-    active_role_changed          = Signal(str)  # role_key ("" means servo default)
 
     def __init__(self, state, ollama, tools):
         super().__init__()
@@ -67,7 +65,6 @@ class CoreLoop(QThread):
         self._autonomous_cycle_count = 0
         self._pending_tool_payload = None
         self._sentinel = get_logger()
-        self._active_role = ""  # Current role key (e.g. "sentinel") set by goal-due prods
 
         # Cancellation — set by submit_input to interrupt an in-flight model call.
         # Cleared at the top of every cycle so each fresh cycle starts non-cancelled.
@@ -99,26 +96,13 @@ class CoreLoop(QThread):
         self._manifest_mtime     = 0
 
         # Cached role metadata (priorities) — re-read when roles.json mtime changes
-        self._roles_cache        = None
-        self._roles_mtime        = 0
-
         # Cached persona core (codex/persona_core.md) — re-read when file mtime changes
         self._persona_cache      = None
         self._persona_mtime      = 0
 
-        # Cached role manifests (codex/role_manifests/<role>.md) — one entry per role,
-        # each tracked by mtime so hot-edits are picked up without restart. Only the
-        # currently active role's manifest is injected into the prompt, so these
-        # caches stay small even if every role ever gets a manifest file.
-        self._role_manifest_cache: dict[str, str]   = {}
-        self._role_manifest_mtime: dict[str, float] = {}
 
     def submit_input(self, text: str, image_b64: str = ""):
         self._pending_input = {"text": text, "image": image_b64}
-        if self._active_role:
-            # User input clears the overlay — they're talking to plain Servo
-            self._active_role = ""
-            self.active_role_changed.emit("")
         self._grace_cycle_count        = 0   # real user turn → grace counter resets
         self._autonomous_cycle_count   = 0   # and the continuous-mode cycle counter too
         # If a model call is in flight, interrupt it so the user isn't locked out.
@@ -183,38 +167,11 @@ class CoreLoop(QThread):
                     _next_payload = directive["payload"]
                     _loop_index  += 1
 
-                elif action == "snooze" and self.continuous_mode:
-                    snooze_s   = directive.get("snooze_seconds", 60)
-                    snooze_min = max(1, int(snooze_s / 60))
-                    self.response_ready.emit(
-                        f"[Continuous Mode] All goals are snoozing. "
-                        f"Next check in ~{snooze_min} minute(s). "
-                        f"You can send a message at any time.",
-                        "manager"
-                    )
-                    self._set_step(LoopStep.OBSERVE)
-                    # Sleep in 1-second ticks so user input can interrupt immediately
-                    elapsed = 0
-                    while self._running and self.continuous_mode and elapsed < snooze_s:
-                        if self._pending_input is not None:
-                            break   # user typed — handled at top of while loop
-                        time.sleep(1)
-                        elapsed += 1
-                    # Only re-queue the prod if still running, still continuous, no new user input
-                    if self._running and self.continuous_mode and self._pending_input is None:
-                        _next_payload = directive["payload"]
-                        _loop_index  += 1
-
                 else:  # "done" or unknown
                     _loop_index = 0
                     self._set_step(LoopStep.OBSERVE)
             else:
-                # Idle path: check every 30 seconds for expired finite goals so they
-                # auto-retire even when no cycles are running.
-                now = time.time()
-                if now - _last_expiry_check >= 30.0:
-                    self._check_goals_status()
-                    _last_expiry_check = now
+                # Idle path
                 time.sleep(0.05)
 
     def _run_cycle(self, user_payload: dict, loop_index: int = 0) -> dict:
@@ -276,8 +233,8 @@ class CoreLoop(QThread):
                         "vram_percent": hw_status["vram_percent"],
                     })
                     self._trace(LoopStep.REASON,
-                        f"Hardware Critical (RAM: {hw_status['ram_percent']}%, "
-                        f"VRAM: {hw_status['vram_percent']}%). Purging KV cache & throttling conversation history.")
+                        f"Hardware Critical (R:{hw_status['ram_percent']}%, "
+                        f"V:{hw_status['vram_percent']}%) - Throttling history.")
                     if hasattr(self.ollama, "clear_kv_cache"):
                         self.ollama.clear_kv_cache()
                     # Model-appropriate floor: half of the model's default, not a hardcoded 5.
@@ -294,7 +251,7 @@ class CoreLoop(QThread):
                         self.conversation_history = self.default_conversation_history
                         self.conversation_history_changed.emit(self.conversation_history)
                         self._stable_loop_count = 0
-                        self._trace(LoopStep.REASON, "Hardware usage stabilized. Restoring normal conversation history.")
+                        self._trace(LoopStep.REASON, "Hardware Stable - Normal History")
                 reasoning = self._reason(context, current_loop=loop_index)
 
             # ── ACT ────────────────────────────────────────
@@ -307,18 +264,6 @@ class CoreLoop(QThread):
                 is_transient=is_transient,
             )
 
-            # Refresh goal GUI tracker on any goal_manager call
-            if result.get("tool_used") == "goal_manager":
-                try:
-                    import os as _os
-                    goal_path = _os.path.join(_os.getcwd(), "goals.json")
-                    with open(goal_path, "r", encoding="utf-8") as f:
-                        self.goals_changed.emit(json.load(f))
-                except Exception:
-                    pass
-                if "SUCCESS: Goal" in str(result.get("tool_result", "")):
-                    self._trace(LoopStep.INTEGRATE, "Finite Goal officially completed!")
-
             response_text = result["response"]
 
             # ── DETERMINE NEXT ACTION ──────────────────────
@@ -327,8 +272,8 @@ class CoreLoop(QThread):
             if chained_call and (self.continuous_mode or loop_index < self.chain_limit - 1):
                 # Always surface model text before chaining (fixes empty-output bug)
                 if response_text.strip():
-                    self.response_ready.emit(response_text, self._active_role)
-                self._trace(LoopStep.INTEGRATE, "Model chained a tool block! Re-looping automatically.")
+                    self.response_ready.emit(response_text, "")
+                self._trace(LoopStep.INTEGRATE, "Chain detected - Re-looping")
                 # Real work detected — the grace counter resets.
                 self._grace_cycle_count = 0
                 return {
@@ -342,7 +287,7 @@ class CoreLoop(QThread):
                 }
 
             elif self.continuous_mode:
-                self.response_ready.emit(response_text, self._active_role)
+                self.response_ready.emit(response_text, "")
 
                 # Issue 1 fix: if a tool was just used and no chain was detected,
                 # give the model one 'grace cycle' to decide whether to do more
@@ -356,7 +301,7 @@ class CoreLoop(QThread):
                     self._grace_cycle_count += 1
                     self._trace(
                         LoopStep.INTEGRATE,
-                        f"Tool completed. Grace cycle {self._grace_cycle_count}/{self.max_consecutive_grace} before goal check.",
+                        f"Grace cycle {self._grace_cycle_count}/{self.max_consecutive_grace}",
                     )
                     return {
                         "action": "tool_confirm",
@@ -383,67 +328,16 @@ class CoreLoop(QThread):
                         self._autonomous_cycle_count >= self.autonomous_loop_limit:
                     self._trace(
                         LoopStep.OBSERVE,
-                        f"Autonomous loop limit ({self.autonomous_loop_limit}) reached. Pausing for user review.",
+                        f"Auto-loop limit ({self.autonomous_loop_limit}) reached - Paused",
                     )
                     self._autonomous_cycle_count = 0
                     return {"action": "done"}
 
-                has_goals, has_due, snooze_s, due_role, other_due_roles = self._check_goals_status()
-
-                if not has_goals:
-                    self._trace(LoopStep.OBSERVE, "Target Queue empty. Halting continuous cycle.")
-                    return {"action": "done"}
-
-                if has_due:
-                    # Set active role from the due goal
-                    if due_role and due_role != self._active_role:
-                        self._active_role = due_role
-                        self.active_role_changed.emit(due_role)
-                    self._autonomous_cycle_count += 1
-                    self._trace(LoopStep.INTEGRATE, f"Due goal detected (role: {due_role or 'none'}). Auto-prodding model.")
-
-                    # Preemptive auto-tool: if this role has an auto_tool
-                    # configured in roles.json, fire it now so the nudge can
-                    # deliver the result alongside the task description. This
-                    # collapses the typical "be the role" → "invoke the setup
-                    # tool" → "do the actual work" cycle into a single model
-                    # round-trip when the setup tool is deterministic.
-                    auto_tool_output = self._run_auto_tool_for_role(due_role)
-                    roles_live = self._load_roles()
-                    nudge_text = self._build_due_role_nudge(
-                        due_role, other_due_roles, roles_live, auto_tool_output,
-                    )
-                    return {
-                        "action": "continue",
-                        "payload": {
-                            "text":       nudge_text,
-                            "image":      "",
-                            "_transient": True,   # never persisted to conversation
-                        },
-                    }
-
-                snooze_min = max(1, int(snooze_s / 60))
-                self._trace(LoopStep.OBSERVE, f"All goals snoozing. Next due in ~{snooze_min} minute(s).")
-                # Snooze path: nothing is actually due right now. We still
-                # carry a nudge text in the payload in case the snooze is
-                # interrupted, but the auto_tool deliberately does not fire —
-                # it should only run when a role is genuinely due, to avoid
-                # burning tool calls and log entries on no-op ticks.
-                snooze_nudge = self._build_due_role_nudge(
-                    due_role, other_due_roles, self._load_roles(), auto_tool_output="",
-                )
-                return {
-                    "action": "snooze",
-                    "payload": {
-                        "text":       snooze_nudge,
-                        "image":      "",
-                        "_transient": True,   # never persisted to conversation
-                    },
-                    "snooze_seconds": snooze_s,
-                }
+                self._trace(LoopStep.OBSERVE, "Loop idle - No chains")
+                return {"action": "done"}
 
             else:
-                self.response_ready.emit(response_text, self._active_role)
+                self.response_ready.emit(response_text, "")
                 return {"action": "done"}
 
         except ChatCancelled:
@@ -469,7 +363,7 @@ class CoreLoop(QThread):
 
     def _perceive(self, text: str, image: str) -> dict:
         self._set_step(LoopStep.PERCEIVE)
-        self._trace(LoopStep.PERCEIVE, f"Input received ({len(text)} chars)")
+        self._trace(LoopStep.PERCEIVE, f"Input: {len(text)} chars")
         if image:
             self._trace(LoopStep.PERCEIVE, "Image attachment detected and encoded")
         return {
@@ -487,7 +381,7 @@ class CoreLoop(QThread):
         self._set_step(LoopStep.CONTEXTUALIZE)
 
         history = self.state.get_conversation_history(limit=self.conversation_history)
-        self._trace(LoopStep.CONTEXTUALIZE, f"Loaded {len(history)} conversation turns")
+        self._trace(LoopStep.CONTEXTUALIZE, f"Mem: {len(history)} turns")
 
         # Phase 2 (D-20260419-01): load the latest conversation summary
         # if one exists. It's rendered as a [PRIOR CONTEXT] block in the
@@ -498,21 +392,20 @@ class CoreLoop(QThread):
         if history_summary:
             self._trace(
                 LoopStep.CONTEXTUALIZE,
-                f"Loaded conversation summary #{history_summary['id']} "
-                f"covering ids {history_summary['covers_from_id']}..{history_summary['covers_to_id']}"
+                f"Mem: Summary #{history_summary['id']} ({history_summary['covers_from_id']}..{history_summary['covers_to_id']})"
             )
 
         query = perceived.get("raw_input", "")
         if query:
             memory = self.state.get_relevant_memory(query, limit=5)
-            self._trace(LoopStep.CONTEXTUALIZE, f"Loaded {len(memory)} relevant memory entries via vector search")
+            self._trace(LoopStep.CONTEXTUALIZE, f"Mem: {len(memory)} search hits")
         else:
             memory = self.state.get_recent_memory(limit=5)
-            self._trace(LoopStep.CONTEXTUALIZE, f"Loaded {len(memory)} recent memory entries")
+            self._trace(LoopStep.CONTEXTUALIZE, f"Mem: {len(memory)} recent hits")
 
         available_tools = self.tools.get_tool_descriptions()
         enabled = [t["name"] for t in available_tools if t.get("enabled")]
-        self._trace(LoopStep.CONTEXTUALIZE, f"Available tools: {enabled}")
+        self._trace(LoopStep.CONTEXTUALIZE, f"Tools: {len(enabled)} available")
 
         return {
             "input":   perceived["raw_input"],
@@ -543,13 +436,13 @@ class CoreLoop(QThread):
         # Auto-continue if the response was truncated by num_predict
         raw = self._auto_continue(raw, truncated, system_prompt, messages, phase="reason")
 
-        self._trace(LoopStep.REASON, f"Response received ({len(raw)} chars)")
+        self._trace(LoopStep.REASON, f"Resp: {len(raw)} chars")
 
         tool_call = self._parse_tool_call(raw)
         if tool_call:
-            self._trace(LoopStep.REASON, f"Tool call detected: {tool_call.get('tool')}")
+            self._trace(LoopStep.REASON, f"Call: {tool_call.get('tool')}")
         else:
-            self._trace(LoopStep.REASON, "No tool call — direct response")
+            self._trace(LoopStep.REASON, "Call: None")
 
         return {
             "raw_response": raw,
@@ -569,8 +462,8 @@ class CoreLoop(QThread):
             name   = tool_call.get("tool", "")
             args   = tool_call.get("args", {})
 
-            self._trace(LoopStep.ACT, f"Executing: {name}")
-            self._trace(LoopStep.ACT, f"Args: {json.dumps(args)[:200]}")
+            arg_str = json.dumps(args)
+            self._trace(LoopStep.ACT, f"Exec: {name} (args: {arg_str[:60]}{'...' if len(arg_str)>60 else ''})")
 
             self._slog("INFO", "tool_exec", f"Executing tool: {name}", {
                 "tool": name,
@@ -590,7 +483,7 @@ class CoreLoop(QThread):
                     "tool": name, "result_preview": result_str[:200],
                 })
 
-            self._trace(LoopStep.ACT, f"Result: {result_str[:200]}")
+            self._trace(LoopStep.ACT, f"Result: {len(result_str)} chars")
             self.tool_called.emit(name, json.dumps(args), result_str)
 
             # Feed result back to model for a final response
@@ -673,312 +566,12 @@ class CoreLoop(QThread):
                 self.history_compressions_total += 1
                 self._trace(
                     LoopStep.INTEGRATE,
-                    f"Compressed {report['turns_compressed']} turns into summary "
-                    f"#{report['summary_id']} (covers {report['covers_from_id']}.."
-                    f"{report['covers_to_id']}, {report['summary_length']} chars, "
-                    f"model={report['model_used']})"
+                    f"Compressed {report['turns_compressed']} turns -> #{report['summary_id']} ({report['summary_length']}c)"
                 )
 
     # ──────────────────────────────────────────────
     # Helpers
     # ──────────────────────────────────────────────
-
-    def _load_roles(self) -> dict:
-        """
-        Load roles.json with mtime caching so we don't re-read it every cycle.
-        Returns the roles dict (possibly empty) — safe to index with .get().
-        """
-        import os as _os
-        roles_path = _os.path.join(_os.getcwd(), "roles.json")
-        if not _os.path.exists(roles_path):
-            return {}
-        try:
-            mtime = _os.path.getmtime(roles_path)
-            if self._roles_cache is not None and mtime == self._roles_mtime:
-                return self._roles_cache
-            with open(roles_path, "r", encoding="utf-8") as f:
-                data = json.load(f) or {}
-            self._roles_cache = data
-            self._roles_mtime = mtime
-            return data
-        except Exception:
-            return self._roles_cache or {}
-
-    def _substitute_auto_tool_args(self, args: dict) -> dict:
-        """
-        Substitute path placeholders in auto_tool arg values. Keeps manifests
-        model-agnostic: a role can reference `{workspace_folder}` in roles.json
-        and the loop expands it to the backing model's actual workspace path
-        at call time.
-
-        Supported placeholders:
-            {workspace_folder}  → `workspace/<model_safe_name>`
-            {model_safe_name}   → the sanitized model identifier
-            {codex_folder}      → `codex`
-
-        Substitution is string-only and applied recursively to nested dicts /
-        lists. Non-string values pass through untouched.
-        """
-        model_safe_name  = self.ollama.model.replace(":", "_").replace(".", "_")
-        workspace_folder = f"workspace/{model_safe_name}"
-        mapping = {
-            "workspace_folder": workspace_folder,
-            "model_safe_name":  model_safe_name,
-            "codex_folder":     "codex",
-        }
-
-        def _sub(value):
-            if isinstance(value, str):
-                out = value
-                for key, repl in mapping.items():
-                    out = out.replace("{" + key + "}", repl)
-                return out
-            if isinstance(value, dict):
-                return {k: _sub(v) for k, v in value.items()}
-            if isinstance(value, list):
-                return [_sub(v) for v in value]
-            return value
-
-        return _sub(args)
-
-    def _run_auto_tool_for_role(self, role_key: str) -> str:
-        """
-        If the role defines an `auto_tool` in roles.json, invoke it via the
-        tool registry and return the (registry-capped) output. Returns "" if
-        no auto_tool is defined or the role is unknown.
-
-        Intent: the auto_tool is a preemptive first tool call that gives the
-        due role the data it needs before REASON. Example: Scholar gets the
-        delta list, Sentinel gets the last 20 ERRORs, Architect gets the
-        architecture review in hand. This saves one model round-trip per
-        cycle and makes the role's work more deterministic at cycle start.
-
-        Failures are caught and returned as a short diagnostic string rather
-        than raised — a broken auto_tool should not block the cycle.
-        """
-        if not role_key:
-            return ""
-        roles = self._load_roles()
-        role_meta = roles.get(role_key) or {}
-        spec = role_meta.get("auto_tool")
-        if not spec:
-            return ""
-        tool_name = (spec.get("name") or "").strip()
-        tool_args = spec.get("args") or {}
-        if not tool_name:
-            return ""
-        if not isinstance(tool_args, dict):
-            return f"[auto_tool error: args must be an object, got {type(tool_args).__name__}]"
-        tool_args = self._substitute_auto_tool_args(tool_args)
-        try:
-            self._trace(LoopStep.OBSERVE, f"Auto-tool for role '{role_key}': {tool_name}")
-            return self.tools.execute(tool_name, tool_args)
-        except Exception as e:
-            self._slog("WARNING", "core_loop", f"auto_tool failed for role '{role_key}'",
-                       {"tool": tool_name, "args": tool_args, "error": str(e)})
-            return f"[auto_tool {tool_name} failed: {e}]"
-
-    def _build_due_role_nudge(
-        self,
-        due_role: str,
-        other_due_roles: list,
-        roles_live: dict,
-        auto_tool_output: str,
-    ) -> str:
-        """
-        Build the user-turn nudge text sent to the model when a role is due.
-
-        Sections, in order:
-            [ROLE DUE]         — title + schedule
-            [YOUR TASK]        — live task text from roles.json
-            [AUTO-TOOL OUTPUT] — pre-fetched data, if the role has an auto_tool
-            [OTHER DUE ROLES]  — other role_* goals also due this cycle
-            [WRAP-UP]          — explicit mark_done instruction with exact args
-
-        The nudge is transient (not persisted to conversation history) so it
-        never clutters future cycles; each due cycle rebuilds it fresh from
-        the live roles.json + current auto_tool output.
-        """
-        if not due_role:
-            # Fallback for non-role finite goals — keep the old short text.
-            return (
-                "SYSTEM (Autonomous Loop): A goal is due. "
-                "Please take necessary actions, and if a continuous goal "
-                "is satisfied for now, use the 'mark_done' action to snooze it."
-            )
-
-        role = roles_live.get(due_role, {}) or {}
-        title    = role.get("title", due_role)
-        task     = (role.get("task") or "").strip() or "(no task text in roles.json)"
-        sched_m  = int(role.get("schedule_minutes", 60) or 60)
-
-        lines = [
-            f"SYSTEM (Autonomous Loop)",
-            f"[ROLE DUE] {title} — schedule: every {sched_m} min.",
-            "",
-            "[YOUR TASK]",
-            task,
-        ]
-
-        if auto_tool_output:
-            lines.extend(["", "[AUTO-TOOL OUTPUT]", auto_tool_output])
-
-        if other_due_roles:
-            # Show the other due role keys with their titles if available.
-            labeled = []
-            for rk in other_due_roles:
-                t = (roles_live.get(rk) or {}).get("title", rk)
-                labeled.append(f"{rk} ({t})")
-            lines.extend([
-                "",
-                "[OTHER DUE ROLES]",
-                "Also queued this cycle (lower priority or less overdue): "
-                + ", ".join(labeled),
-                "You may chain mark_done calls for multiple roles in one cycle if "
-                "their work is satisfied together, but only adopt ONE role's voice "
-                "per response.",
-            ])
-
-        lines.extend([
-            "",
-            "[WRAP-UP]",
-            "When this role's work is satisfied for this cycle, emit this "
-            "JSON tool call verbatim — the loop only recognizes tool calls "
-            "that match the fenced-JSON shape documented in AVAILABLE TOOLS:",
-            "```json",
-            f'{{"tool": "goal_manager", "args": {{"action": "mark_done", "goal_name": "role_{due_role}"}}}}',
-            "```",
-            "That snoozes this role for its full schedule. Prose like "
-            '`goal_manager action="mark_done" ...` is NOT parsed as a tool '
-            "call — if you describe the action in words instead of emitting "
-            "the JSON block, the role stays due and will fire again next "
-            "cycle. Always close the loop with the fenced JSON, even if the "
-            "only outcome is 'nothing to report this cycle'.",
-        ])
-
-        return "\n".join(lines)
-
-    def _check_goals_status(self) -> tuple:
-        """
-        Read goals.json and return:
-            (has_goals: bool,
-             has_due_goals: bool,
-             min_snooze_seconds: float,
-             due_role: str,
-             other_due_roles: list[str])
-        min_snooze_seconds is the time until the soonest continuous goal becomes due.
-        due_role is the role key (e.g. 'sentinel') if a role_* goal is due, else ''.
-        other_due_roles contains the remaining due role keys ordered by the same
-        priority/overdue tie-break — useful for the nudge so the model knows what
-        else is queued and can chain mark_done calls across multiple roles in one
-        cycle when appropriate.
-        When multiple role goals are simultaneously due, the winner is picked by
-        (priority ascending, overdue-seconds descending) so the choice is
-        deterministic — same goals.json + same clock always yields the same winner.
-        Also auto-expires any finite goals whose expires_at has elapsed.
-        """
-        import os as _os
-        try:
-            goal_path = _os.path.join(_os.getcwd(), "goals.json")
-            if not _os.path.exists(goal_path):
-                return False, False, 0.0, "", []
-            with open(goal_path, "r", encoding="utf-8") as f:
-                goals_data = json.load(f)
-            if not goals_data:
-                return False, False, 0.0, "", []
-
-            # Auto-expire finite goals whose duration has elapsed
-            expired = [
-                k for k, v in goals_data.items()
-                if v.get("type") == "finite" and v.get("expires_at") and time.time() >= v["expires_at"]
-            ]
-            if expired:
-                for k in expired:
-                    del goals_data[k]
-                    self._trace(LoopStep.INTEGRATE, f"Finite goal '{k}' auto-expired after duration limit.")
-                with open(goal_path, "w", encoding="utf-8") as f:
-                    json.dump(goals_data, f, indent=4)
-                self.goals_changed.emit(goals_data)
-            if not goals_data:
-                return False, False, 0.0, "", []
-
-            roles      = self._load_roles()
-            has_due    = False
-            min_snooze = float("inf")
-            # Collect all due role goals with their (priority, overdue_seconds, role_key).
-            due_role_candidates: list[tuple[int, float, str]] = []
-
-            # Identity overlays that must never be elected as due roles, even if
-            # a stale role_* goal for them exists in goals.json. Mirrors the
-            # _NON_SCHEDULABLE set in tools/role_manager.py.
-            non_schedulable_roles = {"servo"}
-
-            for k, v in goals_data.items():
-                if v.get("type") == "finite":
-                    has_due = True
-                elif v.get("type") == "continuous":
-                    # Skip goals pointing at non-schedulable identity overlays.
-                    if k.startswith("role_") and k[5:] in non_schedulable_roles:
-                        continue
-                    # Skip stale role_* goals whose role no longer exists in
-                    # roles.json (e.g. a renamed/removed overlay like
-                    # role_manager left behind in goals.json). Without this
-                    # guard the loop would elect a ghost role and the GUI
-                    # would surface labels like "Manager" that don't map to
-                    # any real overlay — see chat_panel._ROLE_MAP fallback.
-                    if k.startswith("role_") and k[5:] not in roles:
-                        continue
-                    last    = v.get("last_run", 0)
-                    # Coerce schedule_minutes to int. A string like "0" or "120"
-                    # in goals.json (historical bug: hand-edited entries) would
-                    # otherwise fall through to `"0" * 60` → string of 60 zeros,
-                    # and the sched_s <= 0 comparison would raise TypeError and
-                    # be caught by the outer except Exception, which silently
-                    # returns has_goals=False — surfacing to the user as the
-                    # misleading "Target Queue empty. Halting continuous cycle."
-                    # trace. Be defensive: one bad entry should not kill the
-                    # whole queue.
-                    try:
-                        sched_min = int(v.get("schedule_minutes", 60))
-                    except (TypeError, ValueError):
-                        self._trace(LoopStep.OBSERVE,
-                                    f"Goal '{k}' has non-numeric schedule_minutes "
-                                    f"({v.get('schedule_minutes')!r}); skipping.")
-                        continue
-                    sched_s = sched_min * 60
-                    # A zero/negative schedule is invalid for continuous goals —
-                    # treat as disabled rather than "always due" (which would
-                    # pin the loop on that role forever).
-                    if sched_s <= 0:
-                        continue
-                    remaining = sched_s - (time.time() - last)
-                    if remaining <= 0:
-                        has_due = True
-                        if k.startswith("role_"):
-                            role_key  = k[5:]  # strip 'role_' prefix
-                            role_meta = roles.get(role_key, {})
-                            # Default priority = 5 (lowest) for roles without an explicit field.
-                            priority  = int(role_meta.get("priority", 5))
-                            overdue_s = -remaining  # remaining is <=0 here, so -remaining >= 0
-                            due_role_candidates.append((priority, overdue_s, role_key))
-                    else:
-                        min_snooze = min(min_snooze, remaining)
-
-            # Pick deterministically: lowest priority wins, tie-break by most-overdue.
-            # The winner goes into due_role; the remaining candidates — in the same
-            # sort order — go into other_due_roles so the nudge can surface them as
-            # "also queued" context.
-            due_role = ""
-            other_due_roles: list[str] = []
-            if due_role_candidates:
-                due_role_candidates.sort(key=lambda x: (x[0], -x[1]))
-                due_role = due_role_candidates[0][2]
-                other_due_roles = [c[2] for c in due_role_candidates[1:]]
-
-            snooze_s = min_snooze if min_snooze != float("inf") else 60.0
-            return True, has_due, snooze_s, due_role, other_due_roles
-        except Exception:
-            return False, False, 0.0, "", []
 
     def _call_model(self, system_prompt: str, messages: list) -> tuple:
         """
@@ -1029,7 +622,7 @@ class CoreLoop(QThread):
                 "chars_so_far": len(text),
                 "phase":        phase,
             })
-            self._trace(LoopStep.REASON, f"Response truncated — auto-continuing ({i + 1}/{max_tries}) [phase={phase}]")
+            self._trace(LoopStep.REASON, f"Truncated - auto-continuing ({i + 1}/{max_tries})")
 
             # Targeted continuation: if the partial text looks like it ended mid-JSON tool-call,
             # nudge specifically for JSON completion. Otherwise use the generic continue prompt.
@@ -1189,58 +782,6 @@ class CoreLoop(QThread):
             self._slog("WARNING", "core_loop", f"Failed to load persona_core: {e}", {"path": persona_path})
             return ""
 
-    def _load_role_manifest(self, role_key: str) -> str:
-        """
-        Load codex/role_manifests/<role_key>.md — the human-language role
-        briefing — for injection into the [ROLE BRIEFING] block when the
-        corresponding role is the active overlay.
-
-        Historical note: these manifests existed on disk for months but were
-        read by zero lines of Python; the model's picture of "what this role
-        does" was just the single `task` line in roles.json. This loader is
-        what makes hand-editing the markdown actually land in context.
-
-        Cached per-role by mtime so hot-edits are picked up without restart.
-        Returns "" if the file is missing, unreadable, or empty after
-        stripping HTML comments.
-        """
-        import os
-        if not role_key or role_key == "servo":
-            # servo is the no-overlay default identity; it has no briefing.
-            return ""
-        manifest_path = os.path.join(os.getcwd(), "codex", "role_manifests", f"{role_key}.md")
-        if not os.path.exists(manifest_path):
-            return ""
-        try:
-            mtime = os.path.getmtime(manifest_path)
-            cached = self._role_manifest_cache.get(role_key)
-            if cached is not None and mtime == self._role_manifest_mtime.get(role_key, 0):
-                return cached
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                raw = f.read()
-            # Strip HTML comments so editorial TODOs don't leak into the prompt.
-            rendered = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL).strip()
-            self._role_manifest_cache[role_key] = rendered
-            self._role_manifest_mtime[role_key] = mtime
-            return rendered
-        except Exception as e:
-            self._slog("WARNING", "core_loop", f"Failed to load role manifest: {e}", {"path": manifest_path})
-            return ""
-
-    def _get_active_overlay(self) -> dict:
-        """
-        Return the overlay metadata for the currently active role. If no role
-        is active (normal conversational mode), return the 'servo' default
-        overlay. Returns {} if neither exists.
-        """
-        roles = self._load_roles()
-        key = self._active_role if self._active_role else "servo"
-        overlay = roles.get(key, {})
-        if not overlay and key != "servo":
-            # Role unknown — fall back to servo default
-            overlay = roles.get("servo", {})
-        return overlay
-
     def _build_system_prompt(self, context: dict, is_followup: bool = False, current_loop: int = 0) -> str:
         import os
 
@@ -1266,85 +807,7 @@ class CoreLoop(QThread):
         workspace_folder = f"workspace/{model_safe_name}"
         codex_folder     = "codex"
 
-        # Roles are loaded once here so we can resolve live task text for
-        # role_* continuous goals. Historically, role_manager.enable() froze
-        # `[title] task` into goals.json at enable-time, which meant editing
-        # the task field in roles.json never propagated until a
-        # disable/enable cycle. We now treat roles.json as the single source
-        # of truth and look up role descriptions fresh each build.
-        roles_live = self._load_roles()
-
-        def _goal_description(goal_key: str, goal_meta: dict) -> str:
-            """Return the description to render for a goal. For role_* goals,
-            prefer the live roles.json entry; fall back to the frozen copy in
-            goals.json only if the role was removed from roles.json."""
-            if goal_key.startswith("role_"):
-                role_key = goal_key[len("role_"):]
-                role = roles_live.get(role_key)
-                if role:
-                    title = role.get("title", role_key)
-                    task  = (role.get("task") or "").strip()
-                    if task:
-                        return f"[{title}] {task}"
-            return goal_meta.get("description", "")
-
         goals_text = ""
-        try:
-            goal_path = os.path.join(os.getcwd(), "goals.json")
-            if os.path.exists(goal_path):
-                with open(goal_path, "r", encoding="utf-8") as f:
-                    gls = json.load(f)
-                    if gls:
-                        # Split the queue so we can render each list with
-                        # mode-aware language. When Continuous Mode is OFF,
-                        # continuous role goals are NOT actionable by the
-                        # model — the user drives each turn — so the prompt
-                        # must NOT say "DUE NOW - Please execute ..." for
-                        # them. Historically that wording trained the model
-                        # to elect itself into a role on unrelated user
-                        # turns (e.g. ask a simple question on reboot, model
-                        # invokes scholar_runner because the prompt said
-                        # the Scholar goal was due). Visibility is still
-                        # preserved with an inert "Scheduled every Nm" label.
-                        finite_items     = [(k, v) for k, v in gls.items() if v.get("type") == "finite"]
-                        continuous_items = [(k, v) for k, v in gls.items() if v.get("type") == "continuous"]
-
-                        goals_text += "\n\n[ACTIVE GOALS]"
-                        if self.continuous_mode:
-                            goals_text += "\nCRITICAL: You must execute FINITE goals (Priority 1) completely using tools before actively working on CONTINUOUS routines (Priority 2)."
-                        elif finite_items:
-                            goals_text += "\nCRITICAL: Execute FINITE goals (Priority 1) completely using tools. Continuous Mode is OFF — continuous role goals below are listed for visibility only; you MUST NOT elect yourself into one on a user turn or invoke their auto-tools unprompted."
-                        else:
-                            goals_text += "\nContinuous Mode is OFF. The goals below are listed for visibility only — they only fire when Continuous Mode is enabled and the loop auto-prods you. You MUST NOT elect yourself into a role on a user turn or invoke their auto-tools unprompted."
-
-                        for k, v in finite_items:
-                            desc = _goal_description(k, v)
-                            expires_at = v.get("expires_at")
-                            if expires_at:
-                                mins_left = max(0, int((expires_at - time.time()) / 60))
-                                goals_text += f"\n  - [FINITE PRIORITY 1] {k}: {desc} (Auto-expires in {mins_left} min)"
-                            else:
-                                goals_text += f"\n  - [FINITE PRIORITY 1] {k}: {desc}"
-                        for k, v in continuous_items:
-                            desc = _goal_description(k, v)
-                            last_run  = v.get("last_run", 0)
-                            try:
-                                sched_min = int(v.get("schedule_minutes", 60))
-                            except (TypeError, ValueError):
-                                sched_min = 60
-                            sched_sec = sched_min * 60
-                            if not self.continuous_mode:
-                                # Inert label — no action verb, no "DUE NOW".
-                                goals_text += f"\n  - [CONTINUOUS PRIORITY 2] {k}: {desc} (Scheduled every {sched_min} min — Continuous Mode OFF, will not fire)"
-                                continue
-                            time_since = time.time() - last_run
-                            if time_since >= sched_sec:
-                                goals_text += f"\n  - [CONTINUOUS PRIORITY 2] {k}: {desc} (DUE NOW - Please execute and call goal_manager mark_done)"
-                            else:
-                                snooze_min = int((sched_sec - time_since) / 60)
-                                goals_text += f"\n  - [CONTINUOUS PRIORITY 2] {k}: {desc} (Snoozing for {snooze_min} more minutes)"
-        except Exception:
-            pass
 
         manifest_text = self._load_manifest()
         manifest_block = f"\n\n[SYSTEM ARCHITECTURE]\n{manifest_text}" if manifest_text else ""
@@ -1353,43 +816,8 @@ class CoreLoop(QThread):
         persona_text = self._load_persona_core()
         identity_block = f"\n[IDENTITY]\n{persona_text}\n" if persona_text else ""
 
-        overlay = self._get_active_overlay()
-        overlay_key = self._active_role if self._active_role else "servo"
-        if overlay:
-            voice = overlay.get("voice_overlay", "")
-            fmt   = overlay.get("format_bias", "")
-            risk  = overlay.get("risk_tolerance", "")
-            title = overlay.get("title", overlay_key)
-            domain = overlay.get("domain", "")
-            overlay_lines = [f"\n[ACTIVE ROLE] {title}"]
-            if domain:
-                overlay_lines.append(f"Domain: {domain}")
-            if voice:
-                overlay_lines.append(f"Voice: {voice}")
-            if fmt:
-                overlay_lines.append(f"Format bias: {fmt}")
-            if risk:
-                overlay_lines.append(f"Risk tolerance: {risk}")
-            overlay_lines.append(
-                "This overlay modulates voice and emphasis only. The IDENTITY above is invariant."
-            )
-            overlay_block = "\n" + "\n".join(overlay_lines) + "\n"
-        else:
-            overlay_block = ""
-
-        # Role briefing: full human-language manifest for the active role,
-        # drawn from codex/role_manifests/<role>.md. Only injected when a
-        # role is active (overlay_key != "servo") so inactive roles don't
-        # bloat the default conversational context. The manifest owns the
-        # narrative — what the role's auto-tool does, what the model is
-        # expected to do after the tool runs, how to tell when the role is
-        # finished for the cycle. roles.json still owns the machine fields
-        # (schedule, priority, voice_overlay, format_bias, risk_tolerance).
+        overlay_block = ""
         briefing_block = ""
-        if overlay_key and overlay_key != "servo":
-            briefing_text = self._load_role_manifest(overlay_key)
-            if briefing_text:
-                briefing_block = f"\n[ROLE BRIEFING]\n{briefing_text}\n"
 
         # Phase 2 (D-20260419-01): inject the active conversation
         # summary (if any) as a [PRIOR CONTEXT] block. The block sits

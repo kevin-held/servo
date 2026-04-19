@@ -103,11 +103,9 @@ class MainWindow(QMainWindow):
         self.loop.tool_called.connect(self.loop_panel.on_tool_called)
         self.loop.response_ready.connect(self.chat_panel.on_response_ready)
         self.loop.response_ready.connect(self._on_response_ready)
-        self.loop.active_role_changed.connect(self.chat_panel.on_active_role_changed)
         self.loop.error_occurred.connect(self.chat_panel.on_error)
         self.loop.error_occurred.connect(self._on_error)
         self.loop.conversation_history_changed.connect(self.loop_panel.on_conversation_history_changed)
-        self.loop.goals_changed.connect(self.tool_panel.on_goals_changed)
 
         self.loop.stream_started.connect(self.tool_panel.on_stream_started)
         self.loop.stream_chunk.connect(self.tool_panel.on_stream_chunk)
@@ -149,22 +147,7 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Ready")
             self.loop.start()
 
-            # Sync roles → goals on boot (ensures enabled roles have their continuous goals)
-            try:
-                from tools.role_manager import execute as sync_roles
-                sync_roles("sync")
-            except Exception:
-                pass
-            
-            # Sync Target Goals directly to UI on initial boot
-            try:
-                import os, json
-                goal_path = os.path.join(os.getcwd(), "goals.json")
-                if os.path.exists(goal_path):
-                    with open(goal_path, "r", encoding="utf-8") as f:
-                        self.tool_panel.on_goals_changed(json.load(f))
-            except Exception:
-                pass
+
         else:
             self.status_label.setText(
                 "⚠  Ollama not found — run 'ollama serve' then restart"

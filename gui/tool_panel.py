@@ -266,51 +266,7 @@ class ToolPanel(QWidget):
         self.log_content.setVisible(False)
         layout.addWidget(log_container)
 
-        # Goal Tracker container
-        goal_container = QWidget()
-        gc_layout = QVBoxLayout(goal_container)
-        gc_layout.setContentsMargins(0, 0, 0, 0)
-        gc_layout.setSpacing(4)
-        
-        self.goal_toggle_btn = QPushButton("▶ Target Goals")
-        self.goal_toggle_btn.setStyleSheet("""
-            QPushButton {
-                background: #1a1a1a;
-                color: #FFC107;
-                border: 1px solid #2a2a2a;
-                border-radius: 4px;
-                padding: 6px;
-                font-size: 11px;
-                text-align: left;
-                font-weight: bold;
-            }
-            QPushButton:hover { background: #252525; color: #FFE082; }
-        """)
-        self.goal_toggle_btn.clicked.connect(self._toggle_goal_ui)
-        gc_layout.addWidget(self.goal_toggle_btn)
 
-        self.goal_content = QWidget()
-        goal_inner = QVBoxLayout(self.goal_content)
-        goal_inner.setContentsMargins(0, 4, 0, 0)
-        goal_inner.setSpacing(4)
-        
-        self.goal_list = QListWidget()
-        self.goal_list.setFixedHeight(120)
-        self.goal_list.setStyleSheet("""
-            QListWidget {
-                background: #161616;
-                color: #ccc;
-                border: 1px solid #2a2a2a;
-                border-radius: 6px;
-                font-size: 11px;
-            }
-            QListWidget::item { padding: 4px 6px; border-bottom: 1px solid #222; }
-        """)
-        goal_inner.addWidget(self.goal_list)
-        
-        gc_layout.addWidget(self.goal_content)
-        self.goal_content.setVisible(False)
-        layout.addWidget(goal_container)
 
         layout.addStretch(1)
 
@@ -408,36 +364,14 @@ class ToolPanel(QWidget):
         self.stream_content.setVisible(visible)
         self.stream_toggle_btn.setText("▼ Stream Viewer" if visible else "▶ Stream Viewer")
 
-    def _toggle_goal_ui(self):
-        visible = not self.goal_content.isVisible()
-        self.goal_content.setVisible(visible)
-        self.goal_toggle_btn.setText("▼ Target Goals" if visible else "▶ Target Goals")
+
 
     def _toggle_log_ui(self):
         visible = not self.log_content.isVisible()
         self.log_content.setVisible(visible)
         self.log_toggle_btn.setText("▼ Log Viewer" if visible else "▶ Log Viewer")
 
-    @Slot(object)
-    def on_goals_changed(self, goals: dict):
-        self.goal_list.clear()
-        if not goals:
-            return
-            
-        # Priority 1: Finite
-        for name, meta in goals.items():
-            if meta.get("type") == "finite":
-                item = QListWidgetItem(f"★ {name}\n  └ {meta.get('description')}")
-                item.setForeground(QColor("#4CAF50")) # Bright green
-                item.setBackground(QColor("#1e2e1e")) # Subtle green backing to highlight priority
-                self.goal_list.addItem(item)
-                
-        # Priority 2: Continuous
-        for name, meta in goals.items():
-            if meta.get("type") == "continuous":
-                item = QListWidgetItem(f"∞ {name}\n  └ {meta.get('description')}")
-                item.setForeground(QColor("#546E7A")) # Subdued blue-grey
-                self.goal_list.addItem(item)
+
 
     @Slot()
     def on_stream_started(self):
