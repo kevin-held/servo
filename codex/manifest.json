@@ -1,7 +1,7 @@
 {
   "name": "Servo",
   "lineage": "Cybernetic Actuator",
-  "version": "0.6.10",
+  "version": "0.8.0",
   "description": "An autonomous local-AI executive layer. One persistent process that perceives, reasons, and acts on its own environment through a role-based overlay system, organized into three canonical layers: Cortex (ephemeral runtime), Persona (identity + overlays), Codex (on-disk truth).",
   "layers": {
     "cortex":  "The six-step core loop (core/loop.py). Ephemeral runtime; allowed to lose state on restart. Reference implementation, expected to be obsoleted by future models with embedded schedulers.",
@@ -17,7 +17,7 @@
       {"id": 5, "name": "INTEGRATE",     "summary": "Persist turns and tool outcomes, update working memory, emit telemetry, decide the next directive."},
       {"id": 6, "name": "OBSERVE",       "summary": "Passive watch for external triggers (time-based goals, user input, file changes) while doing minimal work, then GOTO 1."}
     ],
-    "directives": ["done", "chain", "continue", "tool_confirm", "snooze"]
+    "directives": ["done", "chain", "continue", "tool_confirm", "snooze", "task_nudge"]
   },
   "roles": {
     "summary": "One personality (Servo) expressed through role-specific voice overlays. When no role is active, the agent is Servo with no overlay applied — this is represented by the explicit 'servo' entry in roles.json.",
@@ -99,5 +99,20 @@
       "conversation_history":  "Cortex loop (automatic, non-destructive, no user toggle)"
     },
     "kernel":      "tools/summarizer.py exposes summarize(user_content, system_rules, *, model, timeout, max_input_chars) and detect_loaded_model(fallback). Owns Ollama client wiring, 300s chat timeout, 2s /api/ps probe, tail-preserve last-resort trim, empty-response passthrough. Does NOT own prompt content, input shaping, destination, or the agent tool contract. See decisions.md D-20260418-10 (Phase 1 extraction) and D-20260419-01 (Phase 2 conversation hook)."
+  },
+  "task_ledger": {
+    "purpose": "User-directed multi-step plan persistence. Lower-altitude replacement for the v0.7.0-purged goals system — no scheduler, no background firing, no role binding, just an explicit operator-approved sequence of milestones the model is expected to work through.",
+    "tool":    "tools/task.py — single tool, four actions: create (batch or single), complete (idempotent), list (renders cursor), clear (wipes ledger).",
+    "storage": "SQLite tasks table (id, description, status, created_at, completed_at). Sticky across /reset — clear_conversation does NOT wipe tasks; only `task clear` or StateStore.clear_tasks() does.",
+    "grain":   "Semantic milestones, not tool calls. One task per real unit of progress. soft_max=20 entries per create-batch; over-cap is rejected with a teaching error rather than silently truncated.",
+    "prompt_injection": "core/loop.py::_render_active_tasks_block produces an [ACTIVE TASKS] block. Arrow cursor on first pending row, [x] on completed rows. Empty ledger renders as the empty string. Spliced between [PATH DISCIPLINE] and AVAILABLE TOOLS so plan context sits adjacent to tool menu.",
+    "stuck_detection_nudge": {
+      "branch":   "core/loop.py::_run_cycle — fires after chain-branch, before continuous-mode gate.",
+      "trigger":  "Pending ledger non-empty AND no chained tool call AND inbound payload lacks _task_nudge marker.",
+      "gating":   "UNGATED from continuous_mode — fires whenever there's pending plan work regardless of checkbox. Bounded by autonomous_loop_limit and the _task_nudge single-fire guard (prevents runaway self-loop).",
+      "payload":  "Transient SYSTEM message naming cursor task id/description and remaining count. _transient: True, so never persisted to conversation history.",
+      "precedence": "chain > task_nudge > grace > done."
+    },
+    "directive_dispatch": "run() handles action=\"task_nudge\" unconditionally, parallel to chain. Works in both continuous and single-turn modes."
   }
 }

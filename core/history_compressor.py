@@ -107,19 +107,24 @@ def _build_system_rules() -> str:
     the rules (e.g. "always quote the last user request verbatim") lands
     in one place and tests can assert on the returned string.
     """
+    from core.identity import get_identity
+    identity = get_identity()
+    user_name = identity.get("user_name", "Kevin")
+    agent_name = identity.get("agent_name", "Servo")
+
     return (
-        "You compress a sequence of chat turns between a user (Kevin) "
-        "and Servo (an autonomous local-AI agent). Your audience is a "
-        "future version of Servo — it will read your summary in place "
+        f"You compress a sequence of chat turns between a user ({user_name}) "
+        f"and {agent_name} (an autonomous local-AI agent). Your audience is a "
+        f"future version of {agent_name} — it will read your summary in place "
         "of the original turns to stay grounded in the conversation.\n\n"
         "HARD RULES:\n"
-        "1. Preserve Kevin's requests: quote the most recent 1-2 in "
+        f"1. Preserve {user_name}'s requests: quote the most recent 1-2 in "
         "full; paraphrase older ones compactly. If a request was "
         "deferred or left open, say so.\n"
         "2. Preserve tool outcomes: name the tool, the target (file, "
         "url, goal), and the result class (success / failure / "
         "partial). Keep error messages verbatim when they appeared.\n"
-        "3. Preserve decisions and commitments Servo made ("
+        f"3. Preserve decisions and commitments {agent_name} made ("
         "\"I'll do X next\", \"I've recorded Y in the codex\"). These "
         "are load-bearing for continuity.\n"
         "4. Strip internal reasoning, intermediate thinking, and "

@@ -1,13 +1,13 @@
 {
   "name": "Servo",
-  "version": "0.6.10",
+  "version": "0.8.0",
   "layers": {
     "cortex": "runtime (core/loop.py)",
     "persona": "identity (codex/persona_core.md) + overlays (roles.json)",
     "codex": "canonical truth (codex/)"
   },
   "loop": ["PERCEIVE", "CONTEXTUALIZE", "REASON", "ACT", "INTEGRATE", "OBSERVE"],
-  "directives": ["done", "chain", "continue", "tool_confirm", "snooze"],
+  "directives": ["done", "chain", "continue", "tool_confirm", "snooze", "task_nudge"],
   "roles": {
     "default": "servo",
     "keys": ["servo", "sentinel", "analyst", "architect", "orchestrator", "scholar", "guardian"],
@@ -50,5 +50,11 @@
       "conversation_history": "SQLite conversation_summary table -> [PRIOR CONTEXT] block in system prompt; covered raw turns filtered from message list"
     },
     "trigger_conversation":   "INTEGRATE fires maybe_compress() when uncompressed turns >= 2 * conversation_history cap (scales with hardware throttle)"
+  },
+  "task_ledger": {
+    "tool":   "tools/task.py (create|complete|list|clear)",
+    "store":  "SQLite tasks table; sticky across /reset",
+    "prompt": "[ACTIVE TASKS] block in system prompt with arrow cursor on first pending row, [x] on completed",
+    "nudge":  "_run_cycle fires action=task_nudge when pending ledger non-empty + no chain + not re-entering; UNGATED from continuous_mode, bounded by autonomous_loop_limit + single-fire _task_nudge marker"
   }
 }

@@ -110,3 +110,14 @@ _(model returned empty summary — response was truncated, likely due to context
 
 - 3 cycles processed with auto-chained tools including `log_summarizer`, `goal_manager`, and `context_dump`.
 - `core_loop` restarted with `gemma4:26b` and `role_sentinel` set to snooze.
+
+## Digest — 2026-04-19T19:43:48.398144+00:00 → 2026-04-19T21:26:11.075144+00:00
+
+**Entries summarized:** 500  
+**Model:** `gemma4:26b`  
+**Generated:** 2026-04-19T21:27:35.879464+00:00
+
+- core_loop hit WARNING: Response truncated by num_predict — auto-continuing (1/2) x1
+- loop.history_compressor hit WARNING: kernel returned empty summary — keeping raw turns, backing off before next attempt x3
+- Executed perception cycles 3 through 5 involving filesystem tool reads on `codex/decisions.md`.
+- tool_registry loaded 11 tools including filesystem, shell_exec, and memory_manager.

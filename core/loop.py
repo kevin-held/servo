@@ -39,7 +39,7 @@ class CoreLoop(QThread):
     stream_chunk    = Signal(str)        # streamed textual chunk
     stream_started  = Signal()
     stream_finished = Signal()
-    conversation_history_changed = Signal(int)
+    config_changed               = Signal(str, object)
     log_event                    = Signal(str, str, str, str)  # level, component, message, context_json
 
     def __init__(self, state, ollama, tools):
@@ -51,9 +51,15 @@ class CoreLoop(QThread):
         self._pending_input = None
         self.stream_enabled = False
         self.continuous_mode = False
+        
+        from core.identity import get_identity
+        identity_cfg = get_identity()
+        self.agent_name = identity_cfg.get("agent_name", "Servo")
+        self.user_name  = identity_cfg.get("user_name", "Kevin")
+        
         self._goal_achieved = False
-        self.conversation_history         = 15
-        self.default_conversation_history = 15
+        self.conversation_history         = 5
+        self.default_conversation_history = 5
         self._stable_loop_count = 0
         self.verbosity      = "Normal"
         # chain_limit:            max chained tool calls within one user turn.
@@ -100,6 +106,12 @@ class CoreLoop(QThread):
         self._persona_cache      = None
         self._persona_mtime      = 0
 
+        # Current loop step — tracked so submit_input can tell whether an
+        # in-flight interrupt actually aborted real work (REASON/ACT) or
+        # just poked the idle OBSERVE watcher. `_set_step` keeps this in
+        # lockstep with the step_changed signal.
+        self.step = LoopStep.OBSERVE
+
 
     def submit_input(self, text: str, image_b64: str = ""):
         self._pending_input = {"text": text, "image": image_b64}
@@ -108,7 +120,10 @@ class CoreLoop(QThread):
         # If a model call is in flight, interrupt it so the user isn't locked out.
         if not self._cancel_event.is_set():
             self._cancel_event.set()
-            self.user_interrupts_total += 1
+            # Only count it as an interrupt if the agent was actually thinking/acting
+            from core.loop import LoopStep
+            if self.step != LoopStep.OBSERVE:
+                self.user_interrupts_total += 1
 
     def stop(self):
         self._running = False
@@ -164,6 +179,16 @@ class CoreLoop(QThread):
                 elif action == "tool_confirm" and self.continuous_mode:
                     # Grace cycle: model just used a tool but didn't chain. Give it one
                     # free cycle to decide whether to chain more work before we prod for goals.
+                    _next_payload = directive["payload"]
+                    _loop_index  += 1
+
+                elif action == "task_nudge":
+                    # v0.8.0 (D-20260419-12): stuck-detection nudge from
+                    # the task ledger. UNGATED from continuous_mode — runs
+                    # regardless of the checkbox because the task tool
+                    # represents an explicit user-approved plan. Bounded
+                    # by `autonomous_loop_limit` via the `_run_cycle`
+                    # guard (already checked before returning this action).
                     _next_payload = directive["payload"]
                     _loop_index  += 1
 
@@ -241,7 +266,7 @@ class CoreLoop(QThread):
                     # This lets larger-context models keep more history under throttle.
                     floor = max(1, self.default_conversation_history // 2)
                     self.conversation_history = max(floor, self.conversation_history - 2)
-                    self.conversation_history_changed.emit(self.conversation_history)
+                    self.config_changed.emit("conversation_history", self.conversation_history)
                     self._stable_loop_count = 0
                     self.hardware_throttle_total += 1
                     time.sleep(3)
@@ -249,7 +274,7 @@ class CoreLoop(QThread):
                     self._stable_loop_count += 1
                     if self._stable_loop_count >= 5 and self.conversation_history < self.default_conversation_history:
                         self.conversation_history = self.default_conversation_history
-                        self.conversation_history_changed.emit(self.conversation_history)
+                        self.config_changed.emit("conversation_history", self.conversation_history)
                         self._stable_loop_count = 0
                         self._trace(LoopStep.REASON, "Hardware Stable - Normal History")
                 reasoning = self._reason(context, current_loop=loop_index)
@@ -286,7 +311,63 @@ class CoreLoop(QThread):
                     },
                 }
 
-            elif self.continuous_mode:
+            # ── Task-ledger stuck-detection nudge (v0.8.0, D-20260419-12) ──
+            # UNGATED from continuous_mode: fires whenever the ledger has
+            # pending work and the model went quiet without chaining,
+            # bounded only by `autonomous_loop_limit` (via loop_index).
+            # The intent is to catch "declares victory mid-plan" without
+            # forcing the user to flip continuous_mode on. Takes precedence
+            # over the grace cycle when pending tasks exist — the task
+            # nudge message is more actionable than the generic grace prod.
+            #
+            # Single-fire suppression (D-20260419-14): in NON-continuous
+            # mode, `_task_nudge` on the inbound payload suppresses a
+            # second consecutive nudge — we prod once, then halt, so the
+            # operator isn't stuck in a runaway nudge loop when the model
+            # goes permanently quiet. In CONTINUOUS mode the bound is
+            # `autonomous_loop_limit` instead, and we allow the nudge to
+            # re-fire every cycle that has pending work and no chain —
+            # that's the whole point of continuous mode, to persevere on
+            # a multi-step plan without operator intervention.
+            pending_tasks_ledger = self.state.get_pending_tasks()
+            coming_from_task_nudge = user_payload.get("_task_nudge", False)
+            auto_cap_hit = (
+                self.autonomous_loop_limit > 0
+                and loop_index >= self.autonomous_loop_limit - 1
+            )
+            suppress_renudge = coming_from_task_nudge and not self.continuous_mode
+            if pending_tasks_ledger and not suppress_renudge and not auto_cap_hit:
+                self.response_ready.emit(response_text, "")
+                cursor = pending_tasks_ledger[0]
+                remaining = len(pending_tasks_ledger)
+                nudge_text = (
+                    f"SYSTEM: Your plan is not complete — {remaining} task(s) remain. "
+                    f"Next up (cursor ▶): #{cursor['id']}  {cursor['description']}. "
+                    f"Invoke a tool now to work on it. If the plan is finished or "
+                    f"abandoned, call the `task` tool with action=\"clear\" "
+                    f"(or mark the remaining rows complete one by one)."
+                )
+                self._trace(
+                    LoopStep.INTEGRATE,
+                    f"Task nudge: {remaining} pending, cursor on #{cursor['id']}"
+                )
+                return {
+                    "action": "task_nudge",
+                    "payload": {
+                        "text":        nudge_text,
+                        "image":       "",
+                        "_task_nudge": True,
+                        "_transient":  True,   # never persisted to conversation
+                    },
+                }
+
+            if coming_from_task_nudge and not result.get("tool_used"):
+                # Task nudge produced no tool call — model may be genuinely
+                # done or genuinely stuck. Don't nudge again this turn;
+                # fall through to the normal done path below.
+                self._trace(LoopStep.INTEGRATE, "Task nudge produced no tool call - pausing")
+
+            if self.continuous_mode:
                 self.response_ready.emit(response_text, "")
 
                 # Issue 1 fix: if a tool was just used and no chain was detected,
@@ -407,6 +488,20 @@ class CoreLoop(QThread):
         enabled = [t["name"] for t in available_tools if t.get("enabled")]
         self._trace(LoopStep.CONTEXTUALIZE, f"Tools: {len(enabled)} available")
 
+        # v0.8.0 (D-20260419-12): pull the task ledger so the system
+        # prompt can render [ACTIVE TASKS] with a cursor on the first
+        # pending row, and the outer loop can use the pending count to
+        # decide whether to fire a stuck-detection nudge. We pull the
+        # full ledger (pending + completed) so the model sees its trail
+        # of done work, not just what's left.
+        active_tasks = self.state.get_all_active_tasks()
+        if active_tasks:
+            pending_n = sum(1 for t in active_tasks if t["status"] == "pending")
+            self._trace(
+                LoopStep.CONTEXTUALIZE,
+                f"Tasks: {pending_n} pending / {len(active_tasks)} total"
+            )
+
         return {
             "input":   perceived["raw_input"],
             "image":   perceived.get("image", ""),
@@ -414,6 +509,7 @@ class CoreLoop(QThread):
             "history_summary": history_summary,
             "memory":  memory,
             "tools":   available_tools,
+            "tasks":   active_tasks,
         }
 
     # ──────────────────────────────────────────────
@@ -657,6 +753,10 @@ class CoreLoop(QThread):
         return text
 
     def _set_step(self, step: str):
+        # Keep `self.step` in lockstep with the emitted signal so callers
+        # like `submit_input` can read the current step without racing
+        # the Qt event loop.
+        self.step = step
         self.step_changed.emit(step)
 
     def _trace(self, step: str, message: str):
@@ -775,12 +875,50 @@ class CoreLoop(QThread):
                 raw = f.read()
             # Strip HTML comments (e.g. the TODO marker) so we don't pay tokens for them
             rendered = re.sub(r"<!--.*?-->", "", raw, flags=re.DOTALL).strip()
+            # Perform identity template injection
+            rendered = rendered.replace("{agent_name}", self.agent_name).replace("{user_name}", self.user_name)
+            
             self._persona_cache = rendered
             self._persona_mtime = mtime
             return rendered
         except Exception as e:
             self._slog("WARNING", "core_loop", f"Failed to load persona_core: {e}", {"path": persona_path})
             return ""
+
+    def _render_active_tasks_block(self, tasks: list) -> str:
+        """Render the task ledger as an [ACTIVE TASKS] block for the
+        system prompt. `tasks` is the oldest-first list returned by
+        StateStore.get_all_active_tasks().
+
+        Layout stays in lockstep with tools/task.py's `_render_ledger`
+        so the model sees the same shape whether the ledger is pushed
+        into the prompt or pulled via `task list`. Cursor (▶) marks
+        the first pending row only; completed rows render as [x] and
+        remain visible as a trail of what's been done.
+
+        Returns a trailing newline so the caller can splice the block
+        between [PATH DISCIPLINE] and AVAILABLE TOOLS without adding
+        its own separators. Returns the empty string when the ledger
+        is empty — we don't want a decorative placeholder in runs
+        where the model hasn't registered a plan.
+        """
+        if not tasks:
+            return ""
+        pending_seen = False
+        lines = ["\n[ACTIVE TASKS]"]
+        for t in tasks:
+            if t["status"] == "completed":
+                lines.append(f"  [x] #{t['id']}  {t['description']}")
+            else:
+                marker = "▶" if not pending_seen else " "
+                pending_seen = True
+                lines.append(f"  {marker} [ ] #{t['id']}  {t['description']}")
+        lines.append(
+            "Mark a row done with the `task` tool (action=`complete`, "
+            "task_id=N) as soon as the milestone is met. The arrow marker "
+            "points at the next task to work."
+        )
+        return "\n".join(lines) + "\n"
 
     def _build_system_prompt(self, context: dict, is_followup: bool = False, current_loop: int = 0) -> str:
         import os
@@ -807,7 +945,15 @@ class CoreLoop(QThread):
         workspace_folder = f"workspace/{model_safe_name}"
         codex_folder     = "codex"
 
-        goals_text = ""
+        # v0.8.0 (D-20260419-12): render the task ledger as an
+        # [ACTIVE TASKS] block so the model's plan never leaves the
+        # context window. The cursor (▶) marks the first pending row;
+        # completed rows stay visible as [x] so the model sees what's
+        # already been done. When the ledger is empty we emit an empty
+        # string (not "No active tasks.") so unused runs don't carry
+        # a decorative placeholder — the `task` tool teaches the model
+        # how to populate it.
+        tasks_text = self._render_active_tasks_block(context.get("tasks") or [])
 
         manifest_text = self._load_manifest()
         manifest_block = f"\n\n[SYSTEM ARCHITECTURE]\n{manifest_text}" if manifest_text else ""
@@ -834,12 +980,12 @@ class CoreLoop(QThread):
                 "\n[PRIOR CONTEXT]\n"
                 "The turns below the live exchange have been compressed into "
                 "the following summary. Treat it as your own memory of those "
-                "turns — do not ask Kevin to repeat decisions or requests "
+                f"turns — do not ask {self.user_name} to repeat decisions or requests "
                 "captured here.\n\n"
                 f"{history_summary['summary']}\n"
             )
 
-        base = f"""You are Servo — an autonomous local-AI executive layer with access to tools and persistent memory.
+        base = f"""You are {self.agent_name} — an autonomous local-AI executive layer with access to tools and persistent memory.
 {identity_block}{overlay_block}{briefing_block}{prior_context_block}
 [SYSTEM ENVIRONMENT]
 Model Identity: {self.ollama.model}
@@ -861,7 +1007,7 @@ You have WRITE permission in two places:
 
 2. The Codex (canonical project truth) — `codex/`:
    -> {codex_folder}
-   You may write to the Codex when maintaining the canonical docs that belong to your role. Any role may append to `codex/decisions.md` and `codex/history.md`. The Orchestrator proposes updates to `codex/skill_map.md` and entries under `codex/role_manifests/` via change proposals — it does not edit them directly. The Scholar maintains `workspace/<model>/architecture_review_<v>.md` (bumping the prior version to `workspace/<model>/old_stuff/` each cycle), not a Codex file. `codex/persona_core.md` is hand-edited by Kevin only — do not modify it without an explicit instruction.
+   You may write to the Codex when maintaining the canonical docs that belong to your role. Any role may append to `codex/decisions.md` and `codex/history.md`. The Orchestrator proposes updates to `codex/skill_map.md` and entries under `codex/role_manifests/` via change proposals — it does not edit them directly. The Scholar maintains `workspace/<model>/architecture_review_<v>.md` (bumping the prior version to `workspace/<model>/old_stuff/` each cycle), not a Codex file. `codex/persona_core.md` is hand-edited by {self.user_name} only — do not modify it without an explicit instruction.
 
 Editing convention for the Codex: prefer in-place updates over creating new variant files. If you propose a structural change to a Codex doc, write the proposal into your scratch workspace first (as `change_proposal_<ID>.md`) and let the Analyst critique it before promoting.
 
@@ -872,8 +1018,7 @@ All path arguments to tools are PROJECT-ROOT-RELATIVE. The project root is manag
   - CORRECT:   `codex/manifest.json`, `tools/log_query.py`, `workspace/{model_safe_name}/notes.md`
   - REJECTED:  `C:/Users/.../codex/manifest.json`, `/home/.../tools/log_query.py`, any path starting with a drive letter or leading slash
 Absolute paths are rejected with an error — there is no recovery, no fuzzy matching. If you see "Absolute paths are not allowed" in a tool result, re-issue the call with the project-root-relative form.
-{goals_text}
-
+{tasks_text}
 AVAILABLE TOOLS:{tool_lines if tool_lines else " None enabled."}
 
 To use a tool, you MUST respond with exactly ONE JSON block in this exact format:

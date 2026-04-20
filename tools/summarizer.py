@@ -183,7 +183,6 @@ def summarize(
     # Import lazily so test code can stub or skip this path without
     # dragging the full Ollama client into scope at module load.
     from core.ollama_client import OllamaClient
-
     client   = OllamaClient(model=model_name)
     messages = [{"role": "user", "content": user_content}]
     content, _ = client.chat(system_rules, messages, timeout=timeout)

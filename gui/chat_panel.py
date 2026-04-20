@@ -15,6 +15,11 @@ class ChatPanel(QWidget):
 
     def __init__(self):
         super().__init__()
+        from core.identity import get_identity
+        identity = get_identity()
+        self.agent_name = identity.get("agent_name", "Servo")
+        self.user_name = identity.get("user_name", "Kevin")
+
         self._last_assistant_response = ""
         self._attached_image_b64 = ""
         self._build_ui()
@@ -173,7 +178,7 @@ class ChatPanel(QWidget):
         if img_b64 and text:
             display_text = f"[Image Attached] {text}"
             
-        self._append("You", display_text, "#4CAF50")
+        self._append(self.user_name, display_text, "#4CAF50")
         self.input_field.clear()
         self.send_btn.setEnabled(False)
         self.input_submitted.emit(text, img_b64)
@@ -210,7 +215,7 @@ class ChatPanel(QWidget):
     @Slot(str, str)
     def on_response_ready(self, text: str, role_key: str = ""):
         self._last_assistant_response = text
-        self._append("Assistant", text, "#e0e0e0")
+        self._append(self.agent_name, text, "#e0e0e0")
         self.send_btn.setEnabled(True)
         self.chain_btn.setEnabled(True)
         self.input_field.setFocus()

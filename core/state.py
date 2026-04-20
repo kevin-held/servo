@@ -8,8 +8,9 @@ from core.sentinel_logger import get_logger
 class StateStore:
     """
     Persistent state. Everything the loop needs to survive across sessions.
-    Four tables: conversation, memory, trace, state (key/value).
-    Plus: chroma vector database for episodic memory
+    Six tables: conversation, conversation_summary, memory, trace, state
+    (key/value), tasks.
+    Plus: chroma vector database for episodic memory.
     """
 
     def __init__(self, db_path: str = "state/state.db", chroma_path: str = "state/chroma"):
@@ -17,7 +18,7 @@ class StateStore:
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._init_schema()
-        
+
         # Initialize Vector Database
         self.chroma_client = chromadb.PersistentClient(path=chroma_path)
         self.memory_collection = self.chroma_client.get_or_create_collection(name="episodic_memory")
@@ -59,6 +60,22 @@ class StateStore:
                 covers_to_id   INTEGER NOT NULL,
                 model_used     TEXT    NOT NULL,
                 created_at     REAL    NOT NULL
+            );
+            -- v0.8.0: Task ledger. A persistent, ordered plan the model
+            -- registers up-front via the `task` tool so a long chain of
+            -- tool calls doesn't have to be re-derived from conversation
+            -- history every turn. The loop renders pending tasks into an
+            -- [ACTIVE TASKS] block in the system prompt (cursor on the
+            -- first pending row) and uses pending-count to decide whether
+            -- to nudge a stalled chain. See decisions.md D-20260419-12.
+            -- Grain norm: one task per semantic milestone, not per tool
+            -- call (a 3-block paginated read is one task, not three).
+            CREATE TABLE IF NOT EXISTS tasks (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                description  TEXT    NOT NULL,
+                status       TEXT    NOT NULL DEFAULT 'pending',
+                created_at   REAL    NOT NULL,
+                completed_at REAL
             );
         """)
         self.conn.commit()
@@ -188,7 +205,7 @@ class StateStore:
                 "INSERT INTO memory (content, timestamp) VALUES (?, ?)",
                 (content, ts),
             )
-        
+
         # Add to vector memory
         self.memory_collection.add(
             documents=[content],
@@ -221,19 +238,19 @@ class StateStore:
     def get_relevant_memory(self, query: str, limit: int = 5) -> list:
         if not query:
             return self.get_recent_memory(limit)
-            
+
         results = self.memory_collection.query(
             query_texts=[query],
             n_results=limit
         )
-        
+
         if not results['documents'] or not results['documents'][0]:
             return []
-            
+
         memories = []
         for doc, meta in zip(results['documents'][0], results['metadatas'][0]):
             memories.append({"content": doc, "timestamp": meta["timestamp"]})
-            
+
         # Sort by timestamp so the model sees them chronologically
         memories.sort(key=lambda x: x["timestamp"])
         return memories
@@ -275,6 +292,112 @@ class StateStore:
         # Also wipe the summary table so the compressor doesn't serve a
         # [PRIOR CONTEXT] block pointing at id-ranges that no longer exist.
         # The table is recreated lazily on the next save_conversation_summary.
+        # Tasks are NOT wiped here — they persist across conversation
+        # clears because a user may /reset mid-plan and still want the
+        # ledger intact. Use clear_tasks() explicitly to drop them.
         with self.conn:
             self.conn.execute("DELETE FROM conversation")
             self.conn.execute("DELETE FROM conversation_summary")
+
+    # ── Tasks (v0.8.0 task ledger) ────────────────
+
+    def create_task(self, description: str) -> int:
+        """Insert a single pending task. Returns its row id.
+
+        Thin wrapper around create_tasks([description]) — callers that
+        register a plan should prefer the batch form so all rows share
+        a timestamp and the ordering is deterministic.
+        """
+        ids = self.create_tasks([description])
+        return ids[0]
+
+    def create_tasks(self, descriptions: list) -> list:
+        """Batch-insert pending tasks, preserving input order. Returns
+        the list of row ids in the same order as `descriptions`.
+
+        The task tool's `create` action calls this once with the full
+        plan so the model can register a 20-step chain in a single
+        tool call rather than 20 serial calls. Empty / whitespace-only
+        entries are skipped silently — the tool layer is responsible
+        for surfacing that as a validation error if it matters.
+        """
+        ts = time.time()
+        ids = []
+        with self.conn:
+            for desc in descriptions:
+                if not desc or not desc.strip():
+                    continue
+                cur = self.conn.execute(
+                    "INSERT INTO tasks (description, status, created_at) "
+                    "VALUES (?, 'pending', ?)",
+                    (desc.strip(), ts),
+                )
+                ids.append(cur.lastrowid)
+        return ids
+
+    def mark_task_complete(self, task_id: int) -> bool:
+        """Flip a task to 'completed' and stamp completed_at. Returns
+        True iff a pending row with that id was updated.
+
+        Idempotent on already-completed rows (returns False) so a
+        double-complete from a retrying tool call doesn't raise.
+        """
+        with self.conn:
+            cur = self.conn.execute(
+                "UPDATE tasks SET status = 'completed', completed_at = ? "
+                "WHERE id = ? AND status = 'pending'",
+                (time.time(), task_id),
+            )
+        return cur.rowcount > 0
+
+    def get_pending_tasks(self) -> list:
+        """Return all pending tasks oldest-first. The first element is
+        the cursor — the task the [ACTIVE TASKS] render marks with '▶'.
+        """
+        cur = self.conn.execute(
+            "SELECT id, description, status, created_at, completed_at "
+            "FROM tasks WHERE status = 'pending' ORDER BY id ASC"
+        )
+        return [
+            {
+                "id":           r[0],
+                "description":  r[1],
+                "status":       r[2],
+                "created_at":   r[3],
+                "completed_at": r[4],
+            }
+            for r in cur.fetchall()
+        ]
+
+    def get_all_active_tasks(self) -> list:
+        """Return every task row (pending + completed), oldest-first.
+
+        Used by the [ACTIVE TASKS] render so the model sees the whole
+        plan in-flight with check-marks on finished items, not just
+        what's left to do — the completed rows are the trail behind
+        the cursor. `clear_tasks` is the only thing that drops rows.
+        """
+        cur = self.conn.execute(
+            "SELECT id, description, status, created_at, completed_at "
+            "FROM tasks ORDER BY id ASC"
+        )
+        return [
+            {
+                "id":           r[0],
+                "description":  r[1],
+                "status":       r[2],
+                "created_at":   r[3],
+                "completed_at": r[4],
+            }
+            for r in cur.fetchall()
+        ]
+
+    def clear_tasks(self):
+        """Drop every task row. Called by the task tool's `clear` action
+        when the model explicitly abandons / finishes a plan and wants a
+        clean slate, or by tests between cases. Not called automatically
+        — the ledger is deliberately sticky so a crash mid-plan doesn't
+        lose the plan.
+        """
+        with self.conn:
+            self.conn.execute("DELETE FROM tasks")

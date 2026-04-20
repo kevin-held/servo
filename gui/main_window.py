@@ -105,7 +105,7 @@ class MainWindow(QMainWindow):
         self.loop.response_ready.connect(self._on_response_ready)
         self.loop.error_occurred.connect(self.chat_panel.on_error)
         self.loop.error_occurred.connect(self._on_error)
-        self.loop.conversation_history_changed.connect(self.loop_panel.on_conversation_history_changed)
+        self.loop.config_changed.connect(self._on_config_changed)
 
         self.loop.stream_started.connect(self.tool_panel.on_stream_started)
         self.loop.stream_chunk.connect(self.tool_panel.on_stream_chunk)
@@ -127,8 +127,11 @@ class MainWindow(QMainWindow):
             lambda val: setattr(self.ollama, "num_predict", val)
         )
         self.loop_panel.verbosity_combo.currentTextChanged.connect(
-            lambda text: setattr(self.loop, "verbosity", text)
+            lambda val: setattr(self.loop, "verbosity", val)
         )
+        
+        # Load startup config from models.json for the default loaded model
+        self._on_model_changed(self.ollama.model)
         self.loop_panel.loop_limit_spin.valueChanged.connect(
             lambda val: setattr(self.loop, "chain_limit", val)
         )
@@ -164,6 +167,24 @@ class MainWindow(QMainWindow):
     def _on_response_ready(self, _, __):
         self.status_label.setText("Ready")
 
+    @Slot(str, object)
+    def _on_config_changed(self, param: str, value: object):
+        mapping = {
+            "conversation_history": self.loop_panel.context_spin,
+            "temperature": self.loop_panel.temp_spin,
+            "max_tokens": self.loop_panel.tokens_spin,
+            "chain_limit": self.loop_panel.loop_limit_spin,
+        }
+        if param in mapping:
+            spin = mapping[param]
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
+        elif param == "verbosity":
+            self.loop_panel.verbosity_combo.blockSignals(True)
+            self.loop_panel.verbosity_combo.setCurrentText(str(value))
+            self.loop_panel.verbosity_combo.blockSignals(False)
+
     @Slot(str)
     def _on_error(self, msg: str):
         self.status_label.setText(f"Error: {msg[:60]}")
@@ -185,15 +206,26 @@ class MainWindow(QMainWindow):
                     if model in models_configs:
                         cfg = models_configs[model]
                         if "temperature" in cfg:
-                            self.loop_panel.temp_spin.setValue(float(cfg["temperature"]))
+                            val = float(cfg["temperature"])
+                            self.ollama.temperature = val
+                            self.loop_panel.temp_spin.setValue(val)
                         if "max_tokens" in cfg:
-                            self.loop_panel.tokens_spin.setValue(int(cfg["max_tokens"]))
+                            val = int(cfg["max_tokens"])
+                            self.ollama.num_predict = val
+                            self.loop_panel.tokens_spin.setValue(val)
                         if "conversation_history" in cfg:
-                            self.loop_panel.context_spin.setValue(int(cfg["conversation_history"]))
+                            val = int(cfg["conversation_history"])
+                            self.loop.conversation_history = val
+                            self.loop.default_conversation_history = val
+                            self.loop_panel.context_spin.setValue(val)
                         if "chain_limit" in cfg:
-                            self.loop_panel.loop_limit_spin.setValue(int(cfg["chain_limit"]))
+                            val = int(cfg["chain_limit"])
+                            self.loop.chain_limit = val
+                            self.loop_panel.loop_limit_spin.setValue(val)
                         if "verbosity" in cfg:
-                            self.loop_panel.verbosity_combo.setCurrentText(str(cfg["verbosity"]))
+                            val = str(cfg["verbosity"])
+                            self.loop.verbosity = val
+                            self.loop_panel.verbosity_combo.setCurrentText(val)
             except Exception as e:
                 print(f"[Config] Error loading payload for {model}: {e}")
 

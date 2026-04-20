@@ -20,6 +20,90 @@ Each entry follows:
 
 ---
 
+### D-20260419-17 — Teach Chain-vs-Ledger Threshold in Task Tool Description
+**Date:** 2026-04-19
+**Status:** Accepted (refines D-20260419-12)
+**Context:** Live testing of v0.8.0 surfaced a subtle miscalibration: the model was registering tasks for short jobs that would fit comfortably inside a single chained cycle (e.g. "read file A, then edit file B" — two tool calls, under the default `chain_limit=3`). This bloated the ledger with transient entries that completed the same turn they were created, making `[ACTIVE TASKS]` noisy without adding persistence value. The root cause was the `TOOL_DESCRIPTION` constant in `tools/task.py` — the only thing the model actually reads — described HOW to use the ledger but not WHEN. The module docstring had a "When to reach for it" section but that is developer-facing and never rendered into the system prompt.
+**Decision:** Prepend a WHEN-TO-USE clause to `TOOL_DESCRIPTION` that names the threshold explicitly: the ledger is for plans that exceed `chain_limit` OR cross user turns; short jobs should chain tools directly. Include a rule of thumb ("if you'd otherwise say 'first I'll X, then Y, then Z' and Z needs a new tool call after X and Y return, register the plan; if it's 'X then reply,' just chain") so the model has a concrete trigger rather than a vague heuristic. The existing HOW-TO-USE content (grain norm, batch form, `complete` timing, `clear` semantics) is retained verbatim under a `HOW TO USE:` label.
+**Consequences:** The ledger now accurately reflects operator-approved multi-step plans rather than doubling as a transient chain-tracker. Tradeoff: the tool description is longer (~4 sentences up-front before the existing content), which costs a small number of prompt tokens every turn. Given the description is static and heavily reused, this cost is negligible compared to the cost of a misused ledger polluting `[ACTIVE TASKS]` with ephemeral rows. No code change — pure prompt-teaching refinement.
+
+### D-20260419-15 — Headless Live Application Harness for E2E Tests
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** Former iterations of Context Evaluation checked Ollama natively but missed bugs occurring specifically inside `CoreLoop` tool chain parsing or strict filesystem path restriction rules defined by internal security. 
+**Decision:** Deploy `QCoreApplication` headless test suites (`tests/test_e2e_live.py`) connecting directly to CoreLoop's PyQt signals to run true E2E checks in absolute isolation. Tests now utilize dynamically-generated temporary project workspaces instead of relying on unsafe absolute path injections.
+**Consequences:** E2E testing captures true system bottlenecks but demands up to 30-40 seconds to process due to literal iterative agent chains running the heaviest local model weights under the hood.
+
+### D-20260419-16 — Strict 16K Output Alignment for Web Scrapers
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** Massive Youtube transcripts regularly eclipsed the Central Registry boundary (`MAX_TOOL_OUTPUT = 16000`), wiping away the system footer containing continuation data silently.
+**Decision:** Servo natively replicated the pagination `block` logic from `filesystem.py` over to `youtube_transcript.py`, artificially boxing returned HTTP data into discrete 15,000-character blocks, exposing explicit `Call again with block={block + 1}` cues.   
+**Consequences:** High-density read requests are strictly managed, ensuring models never suffer from accidental silent context loss mid-chain. 
+
+### D-20260419-09 — Extract Identity Constants to Central Config
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** Pervasive string hard-coding across `persona_core.md`, the UI labels in `chat_panel.py`, the core instruction generators in `loop.py`, and the background task rules in `history_compressor.py` meant rebranding the agent (or deploying matching clients for other users) required a massive find/replace.
+**Decision:** Create a definitive `configs/identity.json` and a lightweight parser module `core.identity.py`. Rewrite `persona_core.md` to be a pure template document relying strictly on `{user_name}` and `{agent_name}` formatting strings evaluated dynamically at render.
+**Consequences:** Absolute portability and encapsulation. The identity layer can be detached entirely. Tradeoff: looking at `codex/persona_core.md` on disk reveals python-brackets instead of semantic English. This is acceptable since the operator dictates the system values, meaning the agent-facing render achieves the identical target state seamlessly.
+
+### D-20260419-10 — Restrict User Interrupt Telemetry to Active Loop States
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** The agent self-evaluated a telemetry drift on its internal dashboards: `user_interrupts_total` was counting 7, while practically only 2 hard interrupts had occurred.
+**Decision:** `core/loop.py` was unconditionally incrementing the counter anytime `cancel_event.set()` fired. The event rightly triggers on every user interaction to guarantee immediate foregrounding—however, we must constrain the arithmetic update by verifying the active state of the agent: `if self.step != LoopStep.OBSERVE: self.user_interrupts_total += 1`.
+**Consequences:** Eliminates false-flags caused by generic user conversation inputs, repairing the agent's analytical view of how often it's "failing" its operator constraints.
+
+### D-20260419-11 — Support Explicit VRAM Teardown via Ollama HTTP API
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** Massive historical documents (`history.md`, `decisions.md`) consumed >86% of the system GPU VRAM due to Ollama maintaining large KV-caches for 5+ minutes behind idle models, leading to constrained resources elsewhere. 
+**Decision:** Build `unload()` into `core/ollama_client.py`, pushing a dummy 0-duration JSON parameter `{"keep_alive": 0}` forcefully back onto `Ollama/api/generate`.
+**Consequences:** Complete architectural control over system-wide eviction, letting the developer explicitly kill persistent RAM blockers safely within the Python wrapper bounds—ensuring maximum system health overrides natively.
+
+### D-20260419-12 — Task Ledger with Ungated Stuck-Detection Nudge
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** The v0.7.0 purge of the roles+goals system removed the only structured mechanism for multi-step plan persistence. In its absence, longer operator requests (e.g. "archive every file in workspace/ into old_stuff/") hit two failure modes: the model would declare victory after the first tool call and stop chaining, or it would keep chaining but drift off plan mid-way, reinventing the remaining steps incorrectly. Both fail the "longevity" test Kevin described — the agent needs to hold a plan across many turns without the operator baby-sitting. The goals system was the wrong shape for this (time-scheduled background firing), but something plan-shaped was still missing.
+**Decision:** Introduce a single `task` tool (`tools/task.py`) with four actions — `create`, `complete`, `list`, `clear` — backed by a new `tasks` table in SQLite (columns: `id`, `description`, `status`, `created_at`, `completed_at`). Tasks are semantic-grain (one task = one milestone, not one tool call) with a `soft_max=20` cap on `create` (over-cap is rejected with a teaching error). The full ledger (pending + completed) is pulled in CONTEXTUALIZE and rendered into the system prompt as `[ACTIVE TASKS]`, with an arrow-marker cursor on the first pending row and `[x]` on completed rows. Empty ledger renders as the empty string, not a placeholder. `_run_cycle` gains a stuck-detection branch: if the model produced no chained tool call AND the pending ledger is non-empty AND the inbound payload isn't already a task-nudge re-entry, the loop returns `action="task_nudge"` with a SYSTEM message naming the cursor task and the remaining count. The nudge is UNGATED from `continuous_mode` — it fires whenever there's pending plan work, because the task tool represents an explicit operator-approved plan. It is bounded by `autonomous_loop_limit` (the same cap continuous mode uses) and by the `_task_nudge` inbound marker that prevents two consecutive nudges from the same cycle. The ledger is sticky across `/reset` — `clear_conversation` does not wipe tasks, only `task clear` (or `clear_tasks`) does.
+**Consequences:** Operator plans survive across arbitrarily many turns in both continuous and single-turn modes; the model's active work is always visible in the prompt it's reading. The nudge makes "declares victory mid-plan" self-correcting without requiring continuous mode, which matters because continuous mode was conceptually downgraded in v0.7.0. Tradeoffs: (1) the ledger adds one INTEGRATE-time SQLite read per cycle regardless of whether tasks exist (cheap, but non-zero); (2) the nudge fires even when the model was legitimately waiting for user input — mitigated by the `_task_nudge` single-fire guard and the operator's ability to call `task clear`; (3) semantic-grain tasks are an operator-facing contract — if the model creates tasks at tool-call grain instead, the ledger bloats, so the `task` tool description explicitly teaches "one task = one milestone"; (4) this re-introduces a plan-shaped structure that v0.7.0 removed, but deliberately at a lower altitude — no scheduler, no background firing, no role binding, just a user-approved sequence of milestones the model is expected to work through.
+
+### D-20260419-13 — Track Loop Step Attribute on CoreLoop Instance
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** D-20260419-10 added the `if self.step != LoopStep.OBSERVE` guard inside `submit_input` so that conversational submits would not inflate `user_interrupts_total`. The guard read `self.step`, but no code path ever set that attribute — `_set_step` only emitted the `step_changed` Qt signal, relying on listeners to track the current step externally. The guard threw `AttributeError` the first time any user typed input. The bug was masked in development because the error surfaces only on the interrupt path (cancel_event already set when submit_input runs), and was caught in production when Kevin submitted input mid-cycle.
+**Decision:** Initialize `self.step = LoopStep.OBSERVE` in `CoreLoop.__init__` and have `_set_step` assign `self.step = step` before emitting the signal, so the attribute is always a valid mirror of the current step independent of signal delivery timing. `submit_input`'s interrupt-count guard now reads a value that is guaranteed to exist and reflects the step the cycle is actually in.
+**Consequences:** The interrupt telemetry fix from D-20260419-10 now works as intended. No downside — the attribute write is O(1) and cost-free; tests and other callers that want to introspect the current step can read `self.step` without waiting for the Qt event loop to deliver the signal.
+
+### D-20260419-14 — Refine Task-Nudge Single-Fire Suppression to Non-Continuous Mode Only
+**Date:** 2026-04-19
+**Status:** Accepted (refines D-20260419-12)
+**Context:** The v0.8.0 task-ledger nudge (D-20260419-12) used a blanket `_task_nudge` inbound marker to prevent two consecutive nudges from the same cycle, bounded "by autonomous_loop_limit + _task_nudge single-fire guard". In live testing, Kevin saw the continuous-mode loop halt mid-plan: after a task-nudge cycle that produced no tool call (model responded with prose), the marker suppressed the re-nudge, no grace branch applied, and `_run_cycle` fell through to `return {"action": "done"}`. Continuous mode is supposed to persevere on multi-step plans — halting after one non-productive nudge defeats the whole point. The single-fire guard was necessary in non-continuous mode (where there's no other bound to prevent runaway), but redundant in continuous mode, which already has `autonomous_loop_limit` for that exact purpose.
+**Decision:** Gate the `_task_nudge` suppression on `not self.continuous_mode`. Introduce a local `suppress_renudge = coming_from_task_nudge and not self.continuous_mode` and use it in place of the raw `coming_from_task_nudge` check in the nudge-fires condition. In continuous mode, the nudge now re-fires on every cycle that has pending ledger work and no chained tool call, bounded only by `autonomous_loop_limit` (and by ledger emptiness — once tasks are complete, no nudge fires). In non-continuous mode, behavior is unchanged: the nudge fires once, then halts.
+**Consequences:** Continuous mode now actually persists on task-ledger plans the way it claims to. The guard against runaway is still present but now owned by the `autonomous_loop_limit` parameter (which the operator can tune explicitly) rather than the implicit single-fire marker. Tradeoff: if `autonomous_loop_limit = 0` (the unbounded default) AND the model goes permanently silent mid-plan, continuous mode will fire task-nudges indefinitely until the operator interrupts. This is the advertised behavior of unbounded continuous mode; operators who don't want that should set a cap. New test cases added to `tests/test_task_nudge_stuck_detection.py` cover both the continuous re-fire path and the auto-cap suppression path.
+
+### D-20260419-06 — Cap conversation history to 5 turns to prevent attention dilution
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** Context-limit stress testing proved that dense back-and-forth conversational chains explicitly degrade the model's objective-retention, causing amnesia past turn 15. Furthermore, history summarization running on large 15-turn chunks blocked the `INTEGRATE` phase for 60+ seconds locally.
+**Decision:** Drop `conversation_history` default to 5 in `core/loop.py`. 
+**Consequences:** INTEGRATE blocking latency was massively reduced to ~19 seconds. The agent retains high objective fidelity (proven via the Summarizer Fidelity Test) by squashing conversational dialogue faster before the local LLM becomes victim to "Lost in the Middle" attention degradation.
+
+### D-20260419-07 — Do not constrain Ollama num_predict below context payload size
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** Attempted to speed up history compression by forcing the LLM to write no more than `num_predict=500` tokens during the background `tools/summarizer.py` call. 
+**Decision:** Revert output constraining parameters, leave summarizer execution bound purely by input vector size.
+**Consequences:** We discovered that dense local models like `gemma4:26b` explicitly abort internally and yield 0 characters via the API if `num_predict` is strictly clamped too low relative to a very large input context. Keeping the execution lean must be done by sending less data, not by forcing early completion flags.
+
+### D-20260419-08 — Centralize and Sync System Configuration over PySide Config_Changed Signal
+**Date:** 2026-04-19
+**Status:** Accepted
+**Context:** The GUI control dials (Temperature, Max Tokens, Conversation History) were completely disjointed from the internal `CoreLoop` state. `tools/system_config.py` would update the backend config natively, leaving the frontend completely blind. Conversely, UI Qt placeholder defaults failed to trigger valueChanged signals at startup if the `models.json` file specified the exact same placeholder value.
+**Decision:** Implemented a unified `config_changed = Signal(str, object)` in `CoreLoop`. `gui/main_window.py` now explicitly enforces initial config loads directly into the looping engine and UI frames from `models.json` at boot. Furthermore, `tools/system_config.py` broadcasts any changes it makes over the new Signal.
+**Consequences:** True bidirectional realtime syncing. Sliding a setting in the GUI instantly updates the active model, and model-initiated programmatic setting changes magically animate the frontend Qt components identically.
+
 ### D-20260417-01 — Three-layer architecture (Cortex / Persona / Codex)
 **Date:** 2026-04-17
 **Status:** Accepted

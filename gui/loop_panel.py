@@ -260,11 +260,6 @@ class LoopPanel(QWidget):
         )
         tool_item.setExpanded(True)
 
-    @Slot(int)
-    def on_conversation_history_changed(self, limit: int):
-        self.context_spin.blockSignals(True)
-        self.context_spin.setValue(limit)
-        self.context_spin.blockSignals(False)
 
     @Slot(bool)
     def _on_continuous_toggled(self, checked: bool):

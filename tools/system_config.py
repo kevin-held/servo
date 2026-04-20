@@ -112,6 +112,7 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
                 if not (lo <= new_val <= hi):
                     return f"Error: temperature must be between {lo} and {hi}. Got {new_val}."
                 loop.ollama.temperature = new_val
+                loop.config_changed.emit("temperature", new_val)
                 return f"✓ temperature set to {new_val}"
 
             elif parameter == "max_tokens":
@@ -120,6 +121,7 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
                 if not (lo <= new_val <= hi):
                     return f"Error: max_tokens must be between {lo} and {hi}. Got {new_val}."
                 loop.ollama.num_predict = new_val
+                loop.config_changed.emit("max_tokens", new_val)
                 return f"✓ max_tokens set to {new_val}"
 
             elif parameter == "conversation_history":
@@ -128,6 +130,7 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
                 if not (lo <= new_val <= hi):
                     return f"Error: conversation_history must be between {lo} and {hi}. Got {new_val}."
                 loop.conversation_history = new_val
+                loop.config_changed.emit("conversation_history", new_val)
                 return f"✓ conversation_history set to {new_val}"
 
             elif parameter == "chain_limit":
@@ -136,6 +139,7 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
                 if not (lo <= new_val <= hi):
                     return f"Error: chain_limit must be between {lo} and {hi}. Got {new_val}."
                 loop.chain_limit = new_val
+                loop.config_changed.emit("chain_limit", new_val)
                 return f"✓ chain_limit set to {new_val}"
 
             elif parameter == "autonomous_loop_limit":
@@ -144,6 +148,7 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
                 if not (lo <= new_val <= hi):
                     return f"Error: autonomous_loop_limit must be between {lo} and {hi}. Got {new_val}."
                 loop.autonomous_loop_limit = new_val
+                loop.config_changed.emit("autonomous_loop_limit", new_val)
                 if new_val == 0:
                     return "✓ autonomous_loop_limit set to 0 (unbounded continuous mode)"
                 return f"✓ autonomous_loop_limit set to {new_val} cycles before pause"
@@ -154,12 +159,14 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
                 if not (lo <= new_val <= hi):
                     return f"Error: max_auto_continues must be between {lo} and {hi}. Got {new_val}."
                 loop.max_auto_continues = new_val
+                loop.config_changed.emit("max_auto_continues", new_val)
                 return f"✓ max_auto_continues set to {new_val}"
 
             elif parameter == "verbosity":
                 if value not in _VERBOSITY_OPTIONS:
                     return f"Error: verbosity must be one of {_VERBOSITY_OPTIONS}. Got '{value}'."
                 loop.verbosity = value
+                loop.config_changed.emit("verbosity", value)
                 return f"✓ verbosity set to '{value}'"
 
             else:

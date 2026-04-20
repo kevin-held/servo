@@ -71,6 +71,18 @@ class OllamaClient:
         self.temperature = 0.6
         self.num_predict = 16384 # manual testing stable with this param, not too high
 
+    def unload(self) -> bool:
+        """Force Ollama to drop the model from VRAM by pinging it with keep_alive=0."""
+        try:
+            resp = requests.post(
+                f"{self.base_url}/api/generate",
+                json={"model": self.model, "keep_alive": 0},
+                timeout=5
+            )
+            return resp.status_code == 200
+        except requests.RequestException:
+            return False
+
     # ─────────────────────────────────────────────────────────────
     # Internal streaming impl — no retry. Everything cancellable.
     # ─────────────────────────────────────────────────────────────
