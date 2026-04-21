@@ -1,0 +1,11 @@
+PROPOSAL: Semantic Tagging of Branches
+
+**Concept:**
+Each branch file includes a metadata header with semantic tags (e.g., #efficiency, #robustness, #complexity).
+
+**Mechanism:**
+1. **Tagging:** During the generation phase, the agent assigns tags based on the content.
+2. **Filtering:** During the convergence phase, the agent can filter branches by tag to focus on specific architectural goals.
+
+**Benefit:**
+Enables targeted evaluation and prevents the synthesis phase from being overwhelmed by a large number of unorganized branches.

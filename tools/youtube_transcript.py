@@ -62,8 +62,8 @@ def execute(video: str, language: str = "en", save_to: str = "", max_chars: int 
     full_text = re.sub(r"\s+", " ", full_text).strip()
     total_len = len(full_text)
 
-    # Pagination Logic
-    BLOCK_SIZE = 15000
+    from core.identity import get_system_defaults
+    BLOCK_SIZE = get_system_defaults().get("registry", {}).get("BLOCK_SIZE", 15000)
     start_idx = block * BLOCK_SIZE
     end_idx = start_idx + BLOCK_SIZE
     

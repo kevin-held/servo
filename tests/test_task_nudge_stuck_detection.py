@@ -64,8 +64,7 @@ if "chromadb" not in sys.modules:
 def _build_loop(pending_tasks: list,
                 reason_response: str = "I'll wait.",
                 tool_used=None,
-                continuous_mode: bool = False,
-                autonomous_loop_limit: int = 0):
+                autonomous_loop_limit: int = 1):
     """Construct a CoreLoop with every IO stubbed out.
 
     The only real logic exercised is the `_run_cycle` decision tree
@@ -91,6 +90,11 @@ def _build_loop(pending_tasks: list,
     ]
     state.add_trace = MagicMock()
     state.add_conversation_turn = MagicMock()
+    
+    # v1.0.0 (D-20260421-16): Ensure state.get returns None so ConfigRegistry 
+    # falls back to real JSON values instead of MagicMocks.
+    state.get.return_value = None
+    state.get_session_flag.return_value = "False"
 
     ollama = MagicMock()
     ollama.model = "test-model"
@@ -103,7 +107,6 @@ def _build_loop(pending_tasks: list,
     tools.get_tool_descriptions.return_value = []
 
     loop = CoreLoop(state, ollama, tools)
-    loop.continuous_mode       = continuous_mode
     loop.autonomous_loop_limit = autonomous_loop_limit
 
     # Stub the per-step helpers so _run_cycle's branch logic runs in
@@ -163,7 +166,7 @@ class TestTaskNudgeStuckDetection(unittest.TestCase):
             pending_tasks=[{"id": 1, "description": "A"}],
             reason_response="Hmm.",
             tool_used=None,
-            continuous_mode=False,
+            autonomous_loop_limit=1,
         )
         directive = loop._run_cycle(
             {"text": "", "image": "", "_task_nudge": True, "_transient": True}
@@ -180,7 +183,7 @@ class TestTaskNudgeStuckDetection(unittest.TestCase):
             pending_tasks=[{"id": 1, "description": "A"}],
             reason_response="Hmm.",
             tool_used=None,
-            continuous_mode=True,
+            autonomous_loop_limit=2,
         )
         directive = loop._run_cycle(
             {"text": "", "image": "", "_task_nudge": True, "_transient": True}
@@ -196,7 +199,6 @@ class TestTaskNudgeStuckDetection(unittest.TestCase):
             pending_tasks=[{"id": 1, "description": "A"}],
             reason_response="Hmm.",
             tool_used=None,
-            continuous_mode=True,
             autonomous_loop_limit=2,
         )
         directive = loop._run_cycle(
@@ -217,7 +219,9 @@ class TestTaskNudgeStuckDetection(unittest.TestCase):
             autonomous_loop_limit=3,
         )
         directive = loop._run_cycle({"text": "hi", "image": ""}, loop_index=2)
-        self.assertEqual(directive["action"], "done")
+        # Safety Valve (D-20260421-02): Exactly one nudge is allowed even at cap
+        # if a plan is active and this is the first nudge.
+        self.assertEqual(directive["action"], "task_nudge")
 
     def test_nudge_fires_under_cap(self):
         # Same limit=3, but loop_index=0 → plenty of room, nudge fires.
@@ -236,7 +240,7 @@ class TestTaskNudgeStuckDetection(unittest.TestCase):
             pending_tasks=[{"id": 1, "description": "A"}],
             reason_response="Hmm.",
             tool_used=None,
-            continuous_mode=False,
+            autonomous_loop_limit=1,
         )
         directive = loop._run_cycle({"text": "hi", "image": ""})
         self.assertEqual(directive["action"], "task_nudge")

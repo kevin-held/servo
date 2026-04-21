@@ -44,12 +44,13 @@ TOOL_SCHEMA      = {
                                  "instead, prefixed with [SUMMARIZER RETURNED EMPTY - returning raw content]. "
                                  "Default false."},
 }
+from core.identity import get_system_defaults
 
 # Block size for paginated reads. Kept below the tool_registry MAX_TOOL_OUTPUT
 # (16000) so the "[BLOCK N OF M]" footer never pushes the tool result past the
 # registry cap - otherwise the model would see the block content twice
 # truncated (once by us, again by the registry) and lose the navigation hint.
-_BLOCK_SIZE = 15000
+_BLOCK_SIZE = get_system_defaults().get("registry", {}).get("BLOCK_SIZE", 15000)
 
 
 def execute(operation: str, path: str, content: str = "", max_lines: int = 0,

@@ -1,0 +1,43 @@
+{
+  "defaults": {
+    "temperature": 0.5,
+    "max_tokens": 4096,
+    "conversation_history": 20,
+    "chain_limit": 10,
+    "autonomous_loop_limit": 5,
+    "max_auto_continues": 3,
+    "verbosity": "Normal",
+    "stream_enabled": false,
+    "ui_show_thinking": true,
+    "summarize_contextualize": true,
+    "summarize_history_integrate": true,
+    "summarize_tool_results": true,
+    "history_compression_trigger": 2.0,
+    "history_compression_target_chars": 800,
+    "tool_result_compression_threshold": 4000,
+    "tool_result_compression_target_chars": 500,
+    "summarize_read_enabled": true,
+    "summarize_read_threshold": 80,
+    "hardware_throttling_enabled": true,
+    "hardware_throttle_threshold_enter": 95.0,
+    "hardware_throttle_threshold_exit": 90.0
+  },
+  "bounds": {
+    "temperature": [0.0, 1.5],
+    "max_tokens": [256, 16384],
+    "conversation_history": [3, 40],
+    "chain_limit": [1, 20],
+    "autonomous_loop_limit": [0, 1000],
+    "max_auto_continues": [0, 1000],
+    "history_compression_trigger": [1.0, 10.0],
+    "history_compression_target_chars": [100, 5000],
+    "tool_result_compression_threshold": [0, 50000],
+    "tool_result_compression_target_chars": [50, 5000],
+    "summarize_read_threshold": [0, 10000],
+    "hardware_throttle_threshold_enter": [50.0, 99.0],
+    "hardware_throttle_threshold_exit": [50.0, 99.0]
+  },
+  "registry": {
+    "MAX_TOOL_OUTPUT": 16000
+  }
+}

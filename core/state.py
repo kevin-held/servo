@@ -23,6 +23,19 @@ class StateStore:
         self.chroma_client = chromadb.PersistentClient(path=chroma_path)
         self.memory_collection = self.chroma_client.get_or_create_collection(name="episodic_memory")
 
+        # Perform a system backup before returning control to the loop
+        self._backup_state(db_path)
+
+    def _backup_state(self, db_path: str):
+        """Silently duplicates the SQLite database to a .bak extension."""
+        import os
+        import shutil
+        if os.path.exists(db_path):
+            try:
+                shutil.copy2(db_path, f"{db_path}.bak")
+            except Exception:
+                pass
+
     def _init_schema(self):
         self.conn.executescript("""
             CREATE TABLE IF NOT EXISTS conversation (
@@ -235,6 +248,13 @@ class StateStore:
         )
         return [{"content": r[0], "timestamp": r[1]} for r in cur.fetchall()]
 
+    # ── Session Lifecycle ──
+    def set_session_flag(self, key: str, value: str):
+        self.set(f"session_{key}", value)
+
+    def get_session_flag(self, key: str, default: str = None) -> str:
+        return self.get(f"session_{key}", default)
+
     def get_relevant_memory(self, query: str, limit: int = 5) -> list:
         if not query:
             return self.get_recent_memory(limit)
@@ -287,6 +307,11 @@ class StateStore:
         cur = self.conn.execute("SELECT value FROM state WHERE key = ?", (key,))
         row = cur.fetchone()
         return row[0] if row else default
+
+    def get_all_state(self) -> dict:
+        """Returns the entire key/value state table as a dictionary."""
+        cur = self.conn.execute("SELECT key, value FROM state")
+        return {r[0]: r[1] for r in cur.fetchall()}
 
     def clear_conversation(self):
         # Also wipe the summary table so the compressor doesn't serve a

@@ -9,6 +9,8 @@ def main():
     parser = argparse.ArgumentParser(description="Servo AI Assistant")
     parser.add_argument("--test", action="store_true", help="Run tests instead of starting the GUI")
     parser.add_argument("--e2e", action="store_true", help="Launch GUI and run an automated End-to-End visual test")
+    parser.add_argument("--startup-tests", action="store_true", help="Launch GUI and immediately run silent startup unit tests")
+    parser.add_argument("--deep-diagnostics", action="store_true", help="Forces slow E2E/Eval tasks into the startup test queue")
     parser.add_argument(
         "--ollama-verbose",
         action="store_true",
@@ -45,8 +47,22 @@ def main():
     app.setApplicationName("Servo")
     app.setStyle("Fusion")
 
-    window = MainWindow()
+    window = MainWindow(
+        run_startup_tests=args.startup_tests,
+        run_deep_diagnostics=args.deep_diagnostics
+    )
     window.show()
+
+    # v1.0.0 (D-20260421-14): Best-effort cleanup for Terminal / Interrupt exits
+    import signal
+    def handle_exit_signal(sig, frame):
+        # Trigger the proper GUI close event so cleanup logic flows normally
+        window.close()
+        QApplication.quit()
+
+    # Capture Ctrl+C and kill signals
+    signal.signal(signal.SIGINT,  handle_exit_signal)
+    signal.signal(signal.SIGTERM, handle_exit_signal)
 
     if args.e2e:
         from PySide6.QtCore import QTimer

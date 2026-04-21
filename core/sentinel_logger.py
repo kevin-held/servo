@@ -16,14 +16,21 @@ from collections import deque
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from core.identity import get_system_defaults
 
 # ── Constants ────────────────────────────────────────
 
-_LOG_DIR         = Path(__file__).parent.parent / "logs"
+_LOG_DIR_ENV = os.environ.get("SENTINEL_LOG_DIR")
+if _LOG_DIR_ENV:
+    _LOG_DIR = Path(_LOG_DIR_ENV)
+else:
+    _LOG_DIR = Path(__file__).parent.parent / "logs"
+
+_DEFAULTS = get_system_defaults().get("logs", {})
 _ARCHIVE_DIR     = _LOG_DIR / "archive"
 _ACTIVE_LOG      = _LOG_DIR / "sentinel.jsonl"
-_ROTATION_BYTES  = 5 * 1024 * 1024   # 5 MB
-_RETENTION_DAYS  = 30
+_ROTATION_BYTES  = _DEFAULTS.get("ROTATION_BYTES", 5 * 1024 * 1024)
+_RETENTION_DAYS  = _DEFAULTS.get("RETENTION_DAYS", 30)
 _VALID_LEVELS    = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 
@@ -68,13 +75,10 @@ class SentinelLogger:
     def log(self, level: str, component: str, message: str, context: dict = None):
         """
         Write a single structured log entry.
-
-        Args:
-            level:     One of DEBUG, INFO, WARNING, ERROR, CRITICAL.
-            component: The module/tool that generated this event.
-            message:   Human-readable description.
-            context:   Optional metadata dict (e.g., file_path, goal_id).
         """
+        if os.environ.get("SENTINEL_SILENT") == "True":
+            return
+
         level = level.upper()
         if level not in _VALID_LEVELS:
             level = "INFO"
@@ -205,6 +209,31 @@ class SentinelLogger:
                 self._file.flush()
                 self._file.close()
 
+    def clear(self):
+        """Thread-safely truncate the log file and restart logging."""
+        with self._write_lock:
+            # 1. Close current handle
+            if self._file and not self._file.closed:
+                self._file.flush()
+                self._file.close()
+            
+            # 2. Truncate file to zero
+            with open(_ACTIVE_LOG, "w", encoding="utf-8") as f:
+                f.truncate(0)
+            
+            # 3. Re-open in append mode
+            self._file = open(_ACTIVE_LOG, "a", encoding="utf-8")
+            
+            # 4. Log the reset event
+            entry = {
+                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                "level":         "INFO",
+                "component":     "sentinel_logger",
+                "message":       "Log cleared by session reset",
+            }
+            self._file.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            self._file.flush()
+
     # ── Internal ──────────────────────────────────────
 
     def _rotate(self):
@@ -308,9 +337,11 @@ class SentinelLogger:
         return entry
 
     @staticmethod
-    def _parse_iso(iso_str: str) -> datetime | None:
+    def _parse_iso(iso_str) -> datetime | None:
         if not iso_str:
             return None
+        if isinstance(iso_str, datetime):
+            return iso_str
         try:
             return datetime.fromisoformat(iso_str)
         except (ValueError, TypeError):

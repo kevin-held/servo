@@ -31,43 +31,11 @@ _ROOT = Path(__file__).parent.parent.resolve()
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-# ── Stub heavyweight imports that the production modules require but
-#    the test path does not. Specifically: PySide6 (core/loop.py imports
-#    QThread/Signal at module scope) and core.ollama_client (imported by
-#    loop.py and indirectly by summarizer via lazy import, but we patch
-#    that elsewhere). This block must run BEFORE the first `import
-#    core.loop` / `import core.history_compressor`.
-if "PySide6" not in sys.modules:
-    _pyside = types.ModuleType("PySide6")
-    _pyside_core = types.ModuleType("PySide6.QtCore")
-    class _StubSignal:
-        def __init__(self, *a, **k): pass
-        def emit(self, *a, **k): pass
-        def connect(self, *a, **k): pass
-    class _StubQThread:
-        def __init__(self, *a, **k): pass
-    _pyside_core.QThread = _StubQThread
-    _pyside_core.Signal  = _StubSignal
-    _pyside.QtCore       = _pyside_core
-    sys.modules["PySide6"]        = _pyside
-    sys.modules["PySide6.QtCore"] = _pyside_core
-
-if "core.ollama_client" not in sys.modules:
-    _oc = types.ModuleType("core.ollama_client")
-    class ChatCancelled(Exception): pass
-    class OllamaClient:
-        def __init__(self, *a, **k): pass
-        def chat(self, *a, **k): return ("", {})
-    _oc.ChatCancelled = ChatCancelled
-    _oc.OllamaClient  = OllamaClient
-    sys.modules["core.ollama_client"] = _oc
-
-if "chromadb" not in sys.modules:
-    # core/state.py does `import chromadb` at module level. The test
-    # never exercises vector memory, so a module-shaped stub is fine.
-    _chromadb = types.ModuleType("chromadb")
-    _chromadb.PersistentClient = MagicMock()
-    sys.modules["chromadb"] = _chromadb
+# ── Setup ──────────────────────────────────────────────────
+# No global sys.modules hijacking. Prior pollution caused cross-test 
+# regressions (D-20260421-18). Rely on environment packages or 
+# localized patching in tests that require it.
+# ──────────────────────────────────────────────────────────
 
 
 # ──────────────────────────────────────────────────────────

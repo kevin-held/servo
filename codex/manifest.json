@@ -1,12 +1,12 @@
 {
   "name": "Servo",
   "lineage": "Cybernetic Actuator",
-  "version": "0.8.0",
-  "description": "An autonomous local-AI executive layer. One persistent process that perceives, reasons, and acts on its own environment through a role-based overlay system, organized into three canonical layers: Cortex (ephemeral runtime), Persona (identity + overlays), Codex (on-disk truth).",
+  "version": "0.8.3",
+  "description": "An autonomous local-AI executive layer. One persistent process that perceives, reasons, and acts on its own environment through a unified architecture organized into three canonical layers: Cortex (ephemeral runtime), Persona (invariant identity), Codex (on-disk truth).",
   "layers": {
     "cortex":  "The six-step core loop (core/loop.py). Ephemeral runtime; allowed to lose state on restart. Reference implementation, expected to be obsoleted by future models with embedded schedulers.",
-    "persona": "A single identity (Servo) expressed through role overlays. Invariant identity lives in codex/persona_core.md and is injected into the system prompt as the [IDENTITY] block on every cycle. Role overlays (roles.json) supply voice/format/risk fields under [ACTIVE ROLE]. Permanent, portable, backend-agnostic.",
-    "codex":   "The canonical on-disk truth — persona_core, manifest, skill_map, role_overlays, role_manifests, lexicon, decisions, glossary, history, rejected_proposals. Role-writable: any role may append to decisions and history; Orchestrator proposes updates to skill_map and role_manifests/ via change proposals. persona_core is hand-edited by Kevin only. Architecture reviews are model-scoped and live under workspace/<model>/ (see workspace_policy)."
+    "persona": "A single identity (Servo). Invariant identity lives in codex/manifests/persona_core.md and is injected into the system prompt as the [IDENTITY] block on every cycle. Permanent, portable, backend-agnostic.",
+    "codex":   "The canonical on-disk truth — persona_core, manifest, skill_map, lexicon, decisions, glossary, history, rejected_proposals. Logic-writable: any authorized process may prepend to history or to decisions; System logic maintains the skill_map and other manifests via the Change Proposal process. [NOTE: All .md docs relocated to codex/manifests/]."
   },
   "core_loop": {
     "steps": [
@@ -19,13 +19,9 @@
     ],
     "directives": ["done", "chain", "continue", "tool_confirm", "snooze", "task_nudge"]
   },
-  "roles": {
-    "summary": "One personality (Servo) expressed through role-specific voice overlays. When no role is active, the agent is Servo with no overlay applied — this is represented by the explicit 'servo' entry in roles.json.",
-    "keys": ["servo", "sentinel", "analyst", "architect", "orchestrator", "scholar", "guardian"],
-    "default": "servo",
-    "overlay_fields": ["voice_overlay", "format_bias", "risk_tolerance"],
-    "identity_injection": "codex/persona_core.md is loaded (mtime-cached) and inserted as [IDENTITY]. The active role's overlay fields are rendered as [ACTIVE ROLE]. When no role is active, the servo entry is used so the identity + overlay blocks are always present.",
-    "persona_update_mechanism": "TODO — no automated curator yet. codex/persona_core.md is hand-edited by Kevin."
+  "identity": {
+    "summary": "One personality (Servo) defined by its Core. Identity injection: codex/manifests/persona_core.md is loaded (mtime-cached) and inserted as [IDENTITY].",
+    "persona_update_mechanism": "TODO — no automated curator yet. codex/manifests/persona_core.md is hand-edited by Kevin."
   },
   "stack": {
     "ui":       "PySide6 (QThread-based loop)",
@@ -50,55 +46,68 @@
     },
     "interruption": {
       "policy": "submit_input sets a cancel_event that interrupts an in-flight Ollama request mid-stream. The cycle catches ChatCancelled and re-enters PERCEIVE with the new user input. Partial responses are discarded."
-    },
-    "role_selection": {
-      "policy": "When multiple role_* goals are simultaneously due, pick by (priority asc, most-overdue desc). priority is a 1-5 field on each role in roles.json; default 5 if missing."
     }
   },
   "workspace_policy": {
-    "model_workspace": "workspace/<model_safe_name>/ — per-model scratch (architecture_review_<v>.md, change_proposal_<v>.md, critique_<v>.md, calibration, screenshots, old_stuff). Scholar emits a new architecture_review_<v>.md each cycle and bumps the prior version to old_stuff/. Architect emits change_proposal_<v>.md; Analyst emits matching critique_<v>.md.",
-    "codex_path":      "codex/ — canonical truth (persona_core, manifest, manifest_compact, skill_map, role_overlays, role_manifests/, lexicon, decisions, glossary, history, rejected_proposals). Role-writable: any role may append to decisions and history; Orchestrator proposes updates to skill_map and role_manifests/ via change proposals. persona_core is hand-edited by Kevin only.",
+    "model_workspace": "workspace/<model_safe_name>/ — per-model scratch (architecture_review_<v>.md, change_proposal_<v>.md, critique_<v>.md, calibration, screenshots, old_stuff). Architectural reviews and change proposals are generated on a per-cycle basis within this model-scoped directory.",
+    "codex_path":      "codex/manifests/ — canonical truth (persona_core, manifest, manifest_compact, skill_map, lexicon, decisions, glossary, history, rejected_proposals). Machine-writable: any authorized process may append to decisions and history; System logic maintains the skill_map and other manifests via change proposals. [ARCHIVED: role_manifests/, role_overlays.md].",
     "sandbox":         "Filesystem access (read and write) is scoped to the project directory. Autonomous writes are permitted in workspace/<model>/ (default scratch) and codex/ (canonical maintenance).",
     "legacy_paths":    "Pre-0.4.0 <model>_notes/ folders have been consolidated under workspace/. Any remaining reference to *_notes/ is a migration bug."
   },
   "codex_contents": {
-    "persona_core.md":       "Invariant identity. Hand-edited by Kevin.",
-    "manifest.json":         "This file — machine-readable system description.",
-    "manifest_compact.json": "Compact variant for small-context models (conversation_history <= 8).",
-    "skill_map.md":          "Orchestrator-maintained role/layer index.",
-    "role_overlays.md":      "Canonical reference for the overlay system.",
-    "role_manifests/":       "Per-role detailed manifests (sentinel, analyst, architect, orchestrator, scholar).",
-    "lexicon.md":            "Servo-specific vocabulary.",
-    "decisions.md":          "Append-only architectural decision log.",
-    "glossary.md":           "Alphabetical term definitions.",
-    "history.md":            "Release-by-release narrative.",
-    "rejected_proposals.md": "Change proposals that were considered and rejected, with rationale.",
-    "log_digest.md":         "Append-only, machine-written digest of cold log entries. Maintained by tools/log_summarizer.py — Phase 5 pilot. Never hand-edit."
+    "persona_core.md":         "manifests/persona_core.md — Invariant identity. Hand-edited by Kevin.",
+    "manifest.json":           "manifest.json — This file — machine-readable system description.",
+    "manifest_compact.json":   "manifest_compact.json — Compact variant for small-context models (conversation_history <= 8).",
+    "skill_map.md":            "manifests/skill_map.md — Role/layer index. Roles are currently Dormant (reversible — see D-20260420-02).",
+    "role_overlays.md":        "[ARCHIVED] manifests/role_overlays.md — Canonical reference for the legacy overlay system. Retained for reversibility.",
+    "role_manifests/":         "[ARCHIVED] Per-role detailed manifests (sentinel, analyst, architect, orchestrator, scholar). Directory empty in v0.8.x — content preserved in version-control history.",
+    "lexicon.md":              "manifests/lexicon.md — General Servo vocabulary (partially superseded by servo_lexicon.md).",
+    "servo_lexicon.md":        "manifests/servo_lexicon.md — Authoritative implementation-level vocabulary. Overrides general lexicon where they conflict.",
+    "glossary.md":             "manifests/glossary.md — Alphabetical term definitions.",
+    "agent_taxonomy.md":       "manifests/agent_taxonomy.md — Functional classification of Servo behavior (capability levels, state categories). Used for self-classification during reasoning.",
+    "engineering_standards.md":"manifests/engineering_standards.md — Coding / ADR / test standards Servo is expected to follow when producing change proposals.",
+    "self_development.md":     "manifests/self_development.md — Self-Development Lifecycle (SDL). The meta-process Servo follows when proposing or executing changes to itself.",
+    "decisions.md":            "manifests/decisions.md — Append-only architectural decision log (ADRs).",
+    "history.md":              "manifests/history.md — Release-by-release narrative.",
+    "rejected_proposals.md":   "manifests/rejected_proposals.md — Change proposals that were considered and rejected, with rationale.",
+    "integrated_proposals.md": "manifests/integrated_proposals.md — Accepted-and-shipped change proposals (the positive counterpart to rejected_proposals.md).",
+    "process_cp.md":           "manifests/process_cp.md — Change Proposal (CP) process definition.",
+    "process_ip.md":           "manifests/process_ip.md — Integrated Proposal (IP) process definition — how an accepted CP becomes an IP.",
+    "process_execution.md":    "manifests/process_execution.md — Execution phase of the CP→IP lifecycle.",
+    "process_verification.md": "manifests/process_verification.md — Verification phase: how a change is validated before integration.",
+    "process_integration.md":  "manifests/process_integration.md — Integration phase: merging a verified change into the canonical codex + code.",
+    "dream_template.md":       "manifests/dream_template.md — Template for Dream Pad manifests (experimental threads under workspace/<model>/dream_pad/).",
+    "log_digest.md":           "manifests/log_digest.md — Append-only, machine-written digest of cold log entries. Maintained by tools/log_summarizer.py. Never hand-edit."
   },
   "memory_summarization": {
-    "phase":       "2 conversation-history compression",
-    "scope":       "cold log entries (age > 24h) + conversation history at INTEGRATE — kernel shared across all callers",
+    "phase":       "3 per-turn tool-result compression",
+    "scope":       "cold log entries (age > 24h) + conversation history at INTEGRATE (cap-driven rollup) + large tool results at INTEGRATE (per-turn) — kernel shared across all callers",
     "drivers":     {
       "cold_logs":             "tools/log_summarizer.py → tools/summarizer.py",
-      "conversation_history":  "core/history_compressor.py → tools/summarizer.py"
+      "conversation_history":  "core/history_compressor.py → tools/summarizer.py",
+      "tool_results":          "core/tool_result_compressor.py → tools/summarizer.py"
     },
     "destinations": {
-      "cold_logs":             "codex/log_digest.md",
-      "conversation_history":  "SQLite conversation_summary table — surfaced to the model as the [PRIOR CONTEXT] block in the system prompt; raw turns covered by the summary are filtered out of the Ollama message list"
+      "cold_logs":             "codex/manifests/log_digest.md",
+      "conversation_history":  "SQLite conversation_summary table — surfaced to the model as the [PRIOR CONTEXT] block in the system prompt; raw turns covered by the summary are filtered out of the Ollama message list",
+      "tool_results":          "SQLite conversation_history (user role) — replaces the raw tool payload inline, prefixed with 'Tool result (<tool>, compressed N→M chars):' so the model can distinguish condensed from raw when reading back"
     },
     "checkpoints": {
       "cold_logs":             "state/.log_summarizer_checkpoint.json",
-      "conversation_history":  "conversation_summary.covers_to_id (latest row)"
+      "conversation_history":  "conversation_summary.covers_to_id (latest row)",
+      "tool_results":          "none — per-turn, stateless; each tool result is evaluated independently"
     },
     "triggers": {
-      "cold_logs":             "Scholar invokes log_summarizer as a normal tool call on its 120-minute schedule",
-      "conversation_history":  "core/loop.py::_integrate calls history_compressor.maybe_compress() at end of each non-transient turn; fires when uncompressed turns >= 2 x conversation_history (scales with hardware throttle). Empty-response backoff: wait +conversation_history more turns before retry."
+      "cold_logs":             "Maintenance Logic invokes log_summarizer as a normal tool call on its 120-minute schedule",
+      "conversation_history":  "Cortex loop (automatic, non-destructive, no user toggle) calls history_compressor.maybe_compress() at end of each non-transient turn.",
+      "tool_results":          "Cortex loop calls tool_result_compressor.maybe_compress_tool_result() in _integrate whenever a tool returned a payload larger than threshold_chars (default 4000). Below-threshold / empty-response / kernel-exception paths fall back to raw payload."
     },
     "owners": {
-      "cold_logs":             "Scholar",
-      "conversation_history":  "Cortex loop (automatic, non-destructive, no user toggle)"
+      "cold_logs":             "Autonomous Maintenance",
+      "conversation_history":  "Cortex loop",
+      "tool_results":          "Cortex loop"
     },
-    "kernel":      "tools/summarizer.py exposes summarize(user_content, system_rules, *, model, timeout, max_input_chars) and detect_loaded_model(fallback). Owns Ollama client wiring, 300s chat timeout, 2s /api/ps probe, tail-preserve last-resort trim, empty-response passthrough. Does NOT own prompt content, input shaping, destination, or the agent tool contract. See decisions.md D-20260418-10 (Phase 1 extraction) and D-20260419-01 (Phase 2 conversation hook)."
+    "kernel":      "tools/summarizer.py exposes summarize(user_content, system_rules, *, model, timeout, max_input_chars) and detect_loaded_model(fallback). Owns Ollama client wiring, 300s chat timeout, 2s /api/ps probe, tail-preserve last-resort trim, empty-response passthrough. Does NOT own prompt content, input shaping, destination, or the agent tool contract. See decisions.md D-20260418-10 (Phase 1 extraction), D-20260419-01 (Phase 2 conversation hook), and D-20260420-01 (Phase 3 tool-result hook)."
   },
   "task_ledger": {
     "purpose": "User-directed multi-step plan persistence. Lower-altitude replacement for the v0.7.0-purged goals system — no scheduler, no background firing, no role binding, just an explicit operator-approved sequence of milestones the model is expected to work through.",
@@ -114,5 +123,11 @@
       "precedence": "chain > task_nudge > grace > done."
     },
     "directive_dispatch": "run() handles action=\"task_nudge\" unconditionally, parallel to chain. Works in both continuous and single-turn modes."
+  },
+  "task_level_manifests": {
+    "purpose": "Scoped manifests representing individual experimental threads (Dream Pads) or specific sub-projects. These are transient and localized to the active workspace.",
+    "location": "workspace/<model_safe_name>/dream_pad/dream_manifest.md",
+    "protocol": "Servo discovers the dream_manifest.md during the PERCEIVE phase when within a dream_pad directory. It acts as a set of 'Local Goals' that stack on top of the System Manifest.",
+    "template": "codex/manifests/dream_pad_manifest_template.md"
   }
 }

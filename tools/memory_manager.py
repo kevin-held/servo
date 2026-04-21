@@ -14,10 +14,11 @@ def execute(action: str, content: str = "") -> str:
     db_path = os.path.join(os.path.dirname(__file__), "..", "state", "state.db")
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.execute("PRAGMA journal_mode=WAL")
-    
+    conn = None
     try:
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        
         # Make sure the table exists just in case memory manager fires early
         conn.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         
@@ -68,9 +69,20 @@ def execute(action: str, content: str = "") -> str:
             
         conn.execute("INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)", ("working_memory", new_mem))
         conn.commit()
+
+        # v1.0.0 (D-20260421-17): Automatic Functional Snapshot
+        # Log the entire content to the structured Sentinel log for "eyes-on" recall.
+        try:
+            from core.sentinel_logger import get_logger
+            get_logger().log("INFO", "memory.snapshot", "Working memory updated", {"content": new_mem})
+            msg += " (Snapshot captured in System Logs)"
+        except Exception:
+            pass
+
     except Exception as e:
         msg = f"Database Error: {e}"
     finally:
-        conn.close()
+        if conn:
+            conn.close()
         
     return msg

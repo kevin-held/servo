@@ -7,7 +7,7 @@ Reads entries from logs/sentinel.jsonl that are:
 
 If any qualifying entries exist, asks the currently loaded Ollama model to
 condense them into a short digest, appends a dated section to
-codex/log_digest.md, and advances the checkpoint.
+codex/manifests/log_digest.md, and advances the checkpoint.
 
 This is the Phase 5 pilot for the broader memory-summarization work
 (see UPGRADE_PLAN.md §4.6 and decisions.md D-20260417-06). Scoped intentionally
@@ -26,7 +26,7 @@ from pathlib import Path
 TOOL_NAME        = "log_summarizer"
 TOOL_DESCRIPTION = (
     "Condense cold (>24h old) entries from logs/sentinel.jsonl into a short "
-    "digest and append it to codex/log_digest.md. Uses a checkpoint so the "
+    "digest and append it to codex/manifests/log_digest.md. Uses a checkpoint so the "
     "same window is never summarized twice. Pass dry_run=true to preview the "
     "digest without writing to disk or advancing the checkpoint."
 )
@@ -35,7 +35,7 @@ TOOL_SCHEMA      = {
     "dry_run": {
         "type": "boolean",
         "description": "(Optional) If true, return the generated digest without "
-                       "writing to codex/log_digest.md or updating the checkpoint. "
+                       "writing to codex/manifests/log_digest.md or updating the checkpoint. "
                        "Default false.",
     },
     "age_hours": {
@@ -53,7 +53,7 @@ TOOL_SCHEMA      = {
 # ── Path resolution ────────────────────────────────────────
 _ROOT            = Path(__file__).parent.parent.resolve()
 _LOG_FILE        = _ROOT / "logs" / "sentinel.jsonl"
-_DIGEST_FILE     = _ROOT / "codex" / "log_digest.md"
+_DIGEST_FILE     = _ROOT / "codex" / "manifests" / "log_digest.md"
 _CHECKPOINT_FILE = _ROOT / "state" / ".log_summarizer_checkpoint.json"
 
 # Add project root to sys.path so we can import core.ollama_client
@@ -263,7 +263,7 @@ def _append_digest(
     first_ts: str,
     last_ts: str,
 ) -> None:
-    """Append a dated section to codex/log_digest.md."""
+    """Append a dated section to codex/manifests/log_digest.md."""
     _DIGEST_FILE.parent.mkdir(parents=True, exist_ok=True)
 
     header = (

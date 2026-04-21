@@ -11,19 +11,6 @@ from core.tool_registry import ToolRegistry
 from gui.log_panel import LogPanel
 
 
-NEW_TOOL_TEMPLATE = '''\
-TOOL_NAME        = "{name}"
-TOOL_DESCRIPTION = "Describe what this tool does"
-TOOL_ENABLED     = True
-TOOL_SCHEMA      = {{
-    "param": {{"type": "string", "description": "A parameter"}},
-}}
-
-
-def execute(param: str) -> str:
-    # Your implementation here
-    return f"Result: {{param}}"
-'''
 
 
 class ToolPanel(QWidget):
@@ -50,9 +37,10 @@ class ToolPanel(QWidget):
         header.addWidget(lbl)
         header.addStretch()
 
-        add_btn = QPushButton("+ New")
-        add_btn.setFixedWidth(58)
-        add_btn.setStyleSheet("""
+        reload_btn = QPushButton("↺")
+        reload_btn.setFixedWidth(28)
+        reload_btn.setToolTip("Reload all tools from disk")
+        reload_btn.setStyleSheet("""
             QPushButton {
                 background: #1e1e1e;
                 color: #888;
@@ -63,13 +51,6 @@ class ToolPanel(QWidget):
             }
             QPushButton:hover { background: #252525; color: #ccc; }
         """)
-        add_btn.clicked.connect(self._add_tool)
-        header.addWidget(add_btn)
-
-        reload_btn = QPushButton("↺")
-        reload_btn.setFixedWidth(28)
-        reload_btn.setToolTip("Reload all tools from disk")
-        reload_btn.setStyleSheet(add_btn.styleSheet())
         reload_btn.clicked.connect(self._reload_all)
         header.addWidget(reload_btn)
 
@@ -95,82 +76,6 @@ class ToolPanel(QWidget):
         self.tool_list.currentItemChanged.connect(self._on_selected)
         layout.addWidget(self.tool_list)
 
-        # Editor area container
-        editor_widget = QWidget()
-        editor_main_layout = QVBoxLayout(editor_widget)
-        editor_main_layout.setContentsMargins(0, 0, 0, 0)
-        editor_main_layout.setSpacing(4)
-        
-        self.toggle_editor_btn = QPushButton("▶ Tool Editor")
-        self.toggle_editor_btn.setStyleSheet("""
-            QPushButton {
-                background: #1a1a1a;
-                color: #aaa;
-                border: 1px solid #2a2a2a;
-                border-radius: 4px;
-                padding: 6px;
-                font-size: 11px;
-                text-align: left;
-                font-weight: bold;
-            }
-            QPushButton:hover { background: #252525; color: #ddd; }
-        """)
-        self.toggle_editor_btn.clicked.connect(self._toggle_editor)
-        editor_main_layout.addWidget(self.toggle_editor_btn)
-
-        # Inner content that collapses
-        self.editor_content = QWidget()
-        editor_layout = QVBoxLayout(self.editor_content)
-        editor_layout.setContentsMargins(0, 4, 0, 0)
-        editor_layout.setSpacing(6)
-
-        # Controls row
-        controls = QHBoxLayout()
-        self.enabled_check = QCheckBox("Enabled")
-        self.enabled_check.setStyleSheet("color: #888; font-size: 11px;")
-        self.enabled_check.stateChanged.connect(self._toggle_enabled)
-        controls.addWidget(self.enabled_check)
-        controls.addStretch()
-
-        self.save_btn = QPushButton("Save")
-        self.save_btn.setFixedWidth(58)
-        self.save_btn.setEnabled(False)
-        self.save_btn.setStyleSheet("""
-            QPushButton {
-                background: #1565C0;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-size: 11px;
-            }
-            QPushButton:hover   { background: #1976D2; }
-            QPushButton:disabled { background: #1e1e1e; color: #444; }
-        """)
-        self.save_btn.clicked.connect(self._save_tool)
-        controls.addWidget(self.save_btn)
-        editor_layout.addLayout(controls)
-
-        # Code editor
-        self.code_editor = QPlainTextEdit()
-        self.code_editor.setStyleSheet("""
-            QPlainTextEdit {
-                background: #161616;
-                color: #ddd;
-                border: none;
-                border-radius: 6px;
-                padding: 10px;
-                font-family: Consolas, monospace;
-                font-size: 12px;
-            }
-        """)
-        self.code_editor.textChanged.connect(lambda: self.save_btn.setEnabled(True))
-        editor_layout.addWidget(self.code_editor)
-        
-        editor_main_layout.addWidget(self.editor_content)
-        self.editor_content.setVisible(False)  # Collapsed by default
-        
-        layout.addWidget(editor_widget)
 
         # Stream container
         stream_container = QWidget()
@@ -303,61 +208,14 @@ class ToolPanel(QWidget):
         if not current:
             return
         name = current.data(Qt.UserRole)
-        tools = self.registry.get_all_tools()
-        if name in tools:
-            code = self.registry.get_tool_code(name)
-            self.code_editor.blockSignals(True)
-            self.code_editor.setPlainText(code)
-            self.code_editor.blockSignals(False)
-            self.enabled_check.blockSignals(True)
-            self.enabled_check.setChecked(tools[name]["enabled"])
-            self.enabled_check.blockSignals(False)
-            self.save_btn.setEnabled(False)
+        # In observation mode: only update internal state if needed
+        # (Future: could update a Tool Info view here)
 
-    def _toggle_enabled(self, state):
-        item = self.tool_list.currentItem()
-        if not item:
-            return
-        self.registry.set_enabled(item.data(Qt.UserRole), bool(state))
-        self._populate()
-        self.tool_changed.emit()
-
-    def _save_tool(self):
-        item = self.tool_list.currentItem()
-        if not item:
-            return
-        name = item.data(Qt.UserRole)
-        code = self.code_editor.toPlainText()
-        self.registry.save_tool_code(name, code)
-        self.save_btn.setEnabled(False)
-        self._populate()
-        self.tool_changed.emit()
-
-    def _add_tool(self):
-        name, ok = QInputDialog.getText(self, "New Tool", "Tool name (snake_case):")
-        if not (ok and name.strip()):
-            return
-        name = name.strip().lower().replace(" ", "_")
-        code = NEW_TOOL_TEMPLATE.format(name=name)
-        self.registry.create_tool(name, code)
-        self._populate()
-        # Select the new tool
-        for i in range(self.tool_list.count()):
-            it = self.tool_list.item(i)
-            if it.data(Qt.UserRole) == name:
-                self.tool_list.setCurrentItem(it)
-                break
-        self.tool_changed.emit()
 
     def _reload_all(self):
         self.registry.load_all()
         self._populate()
         self.tool_changed.emit()
-
-    def _toggle_editor(self):
-        visible = not self.editor_content.isVisible()
-        self.editor_content.setVisible(visible)
-        self.toggle_editor_btn.setText("▼ Tool Editor" if visible else "▶ Tool Editor")
 
     def _toggle_stream_ui(self):
         visible = not self.stream_content.isVisible()

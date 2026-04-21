@@ -1,0 +1,11 @@
+PROPOSAL: Adaptive Tool-Use Granularity
+
+**Concept:**
+Adjust the frequency and complexity of tool calls based on the 'stability' of the current simulation branch.
+
+**Mechanism:**
+1. **High Volatility (Divergence):** Use lightweight tools (e.g., `memory_manager:append`) to rapidly iterate on ideas.
+2. **Low Volatility (Convergence):** Use heavyweight tools (e.ically `analyze_directory`, `filesystem:read`) to perform deep audits of the generated branches.
+
+**Benefit:**
+Optimizes the simulation's computational efficiency, preventing the agent from wasting time on deep audits of transient, high-entropy noise.

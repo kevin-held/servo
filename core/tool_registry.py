@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from core.identity        import get_system_defaults
 from core.sentinel_logger import get_logger
 
 
@@ -76,8 +77,8 @@ class ToolRegistry:
     # ── Execution ─────────────────────────────────
 
     # Centralized output cap — prevents any single tool from flooding the model's context window.
-    # ~16000 chars ≈ ~4000 tokens, leaving room for system prompt + conversation history. -changed from 8000 by kevin
-    MAX_TOOL_OUTPUT = 16000
+    # ~16000 chars ≈ ~4000 tokens, leaving room for system prompt + conversation history.
+    MAX_TOOL_OUTPUT = get_system_defaults().get("registry", {}).get("MAX_TOOL_OUTPUT", 16000)
 
     def execute(self, name: str, args: dict) -> str:
         if name not in self._tools:

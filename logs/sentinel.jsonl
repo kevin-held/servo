@@ -1,163 +1,60 @@
-{"timestamp_utc": "2026-04-20T01:17:34.967863+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input: 58 chars"}
-{"timestamp_utc": "2026-04-20T01:17:34.970426+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 10 turns"}
-{"timestamp_utc": "2026-04-20T01:17:34.972570+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: Summary #43 (1..5288)"}
-{"timestamp_utc": "2026-04-20T01:17:35.120386+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 5 search hits"}
-{"timestamp_utc": "2026-04-20T01:17:35.121871+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
-{"timestamp_utc": "2026-04-20T01:17:35.123184+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tasks: 0 pending / 1 total"}
-{"timestamp_utc": "2026-04-20T01:17:35.211698+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
-{"timestamp_utc": "2026-04-20T01:17:35.212927+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 11 | Tools: 15"}
-{"timestamp_utc": "2026-04-20T01:17:55.098846+00:00", "level": "INFO", "component": "loop.reason", "message": "Resp: 3163 chars"}
-{"timestamp_utc": "2026-04-20T01:17:55.100571+00:00", "level": "INFO", "component": "loop.reason", "message": "Call: None"}
-{"timestamp_utc": "2026-04-20T01:17:55.101870+00:00", "level": "INFO", "component": "loop.act", "message": "Returning direct response"}
-{"timestamp_utc": "2026-04-20T01:17:55.104600+00:00", "level": "INFO", "component": "loop.integrate", "message": "No tool used — no memory update"}
-{"timestamp_utc": "2026-04-20T01:17:55.105952+00:00", "level": "INFO", "component": "loop.observe", "message": "Loop idle - No chains"}
-{"timestamp_utc": "2026-04-20T01:33:48.153780+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 15 turns → 14 chars", "context": {"summary_id": 2, "covers_from_id": 1, "covers_to_id": 25, "turns_compressed": 15, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:33:48.257671+00:00", "level": "WARNING", "component": "loop.history_compressor", "message": "kernel returned empty summary — keeping raw turns, backing off before next attempt", "context": {"uncompressed_count": 35, "history_cap": 15, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:33:48.298637+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 20 turns → 17 chars", "context": {"summary_id": 1, "covers_from_id": 1, "covers_to_id": 20, "turns_compressed": 20, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:33:48.339976+00:00", "level": "ERROR", "component": "loop.history_compressor", "message": "kernel call raised RuntimeError: kernel blew up", "context": {"uncompressed_count": 35, "history_cap": 15}}
-{"timestamp_utc": "2026-04-20T01:34:16.682672+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: analyze_directory"}
-{"timestamp_utc": "2026-04-20T01:34:16.686925+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: context_dump"}
-{"timestamp_utc": "2026-04-20T01:34:16.689831+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: fetch_url"}
-{"timestamp_utc": "2026-04-20T01:34:16.692948+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: filesystem"}
-{"timestamp_utc": "2026-04-20T01:34:16.695883+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_query"}
-{"timestamp_utc": "2026-04-20T01:34:16.697301+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_summarizer"}
-{"timestamp_utc": "2026-04-20T01:34:16.699829+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_manager"}
-{"timestamp_utc": "2026-04-20T01:34:16.702783+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_snapshot"}
-{"timestamp_utc": "2026-04-20T01:34:16.705999+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: screenshot"}
-{"timestamp_utc": "2026-04-20T01:34:16.709054+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: shell_exec"}
-{"timestamp_utc": "2026-04-20T01:34:16.712423+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: summarizer"}
-{"timestamp_utc": "2026-04-20T01:34:16.715618+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: system_config"}
-{"timestamp_utc": "2026-04-20T01:34:16.718486+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: task"}
-{"timestamp_utc": "2026-04-20T01:34:16.721149+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: web_search"}
-{"timestamp_utc": "2026-04-20T01:34:16.724365+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: youtube_transcript"}
-{"timestamp_utc": "2026-04-20T01:34:16.730892+00:00", "level": "INFO", "component": "core_loop", "message": "Core loop started", "context": {"model": "gemma4:26b", "continuous_mode": false}}
-{"timestamp_utc": "2026-04-20T01:34:16.736306+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input: 319 chars"}
-{"timestamp_utc": "2026-04-20T01:34:16.741921+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 0 turns"}
-{"timestamp_utc": "2026-04-20T01:34:17.078473+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 0 search hits"}
-{"timestamp_utc": "2026-04-20T01:34:17.083652+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
-{"timestamp_utc": "2026-04-20T01:34:17.199389+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
-{"timestamp_utc": "2026-04-20T01:34:17.204873+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 1 | Tools: 15"}
-{"timestamp_utc": "2026-04-20T01:34:29.588761+00:00", "level": "INFO", "component": "loop.reason", "message": "Resp: 133 chars"}
-{"timestamp_utc": "2026-04-20T01:34:29.595722+00:00", "level": "INFO", "component": "loop.reason", "message": "Call: filesystem"}
-{"timestamp_utc": "2026-04-20T01:34:29.597263+00:00", "level": "INFO", "component": "loop.act", "message": "Exec: filesystem (args: {\"operation\": \"write\", \"path\": \"tests/tmp42gkej_b/e2e_simple...)"}
-{"timestamp_utc": "2026-04-20T01:34:29.598117+00:00", "level": "INFO", "component": "tool_exec", "message": "Executing tool: filesystem", "context": {"tool": "filesystem", "args_preview": "{\"operation\": \"write\", \"path\": \"tests/tmp42gkej_b/e2e_simple.txt\", \"content\": \"E2E_PASS\"}"}}
-{"timestamp_utc": "2026-04-20T01:34:29.600819+00:00", "level": "DEBUG", "component": "tool_exec", "message": "Tool 'filesystem' completed", "context": {"tool": "filesystem", "result_preview": "Wrote 8 chars to 'tests/tmp42gkej_b/e2e_simple.txt'"}}
-{"timestamp_utc": "2026-04-20T01:34:29.602493+00:00", "level": "INFO", "component": "loop.act", "message": "Result: 51 chars"}
-{"timestamp_utc": "2026-04-20T01:34:29.604358+00:00", "level": "INFO", "component": "loop.act", "message": "Sending tool result back to model"}
-{"timestamp_utc": "2026-04-20T01:34:34.360710+00:00", "level": "INFO", "component": "loop.integrate", "message": "Memory updated: Used filesystem → Wrote 8 chars to 'tests/tmp42gkej_b/e2e_simple.txt'"}
-{"timestamp_utc": "2026-04-20T01:34:34.484063+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: analyze_directory"}
-{"timestamp_utc": "2026-04-20T01:34:34.485710+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: context_dump"}
-{"timestamp_utc": "2026-04-20T01:34:34.486956+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: fetch_url"}
-{"timestamp_utc": "2026-04-20T01:34:34.488346+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: filesystem"}
-{"timestamp_utc": "2026-04-20T01:34:34.489671+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_query"}
-{"timestamp_utc": "2026-04-20T01:34:34.491482+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_summarizer"}
-{"timestamp_utc": "2026-04-20T01:34:34.492554+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_manager"}
-{"timestamp_utc": "2026-04-20T01:34:34.494022+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_snapshot"}
-{"timestamp_utc": "2026-04-20T01:34:34.495360+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: screenshot"}
-{"timestamp_utc": "2026-04-20T01:34:34.496465+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: shell_exec"}
-{"timestamp_utc": "2026-04-20T01:34:34.497712+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: summarizer"}
-{"timestamp_utc": "2026-04-20T01:34:34.498730+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: system_config"}
-{"timestamp_utc": "2026-04-20T01:34:34.499942+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: task"}
-{"timestamp_utc": "2026-04-20T01:34:34.501064+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: web_search"}
-{"timestamp_utc": "2026-04-20T01:34:34.502371+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: youtube_transcript"}
-{"timestamp_utc": "2026-04-20T01:34:34.504816+00:00", "level": "INFO", "component": "core_loop", "message": "Core loop started", "context": {"model": "gemma4:26b", "continuous_mode": false}}
-{"timestamp_utc": "2026-04-20T01:34:34.506372+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input: 355 chars"}
-{"timestamp_utc": "2026-04-20T01:34:34.507695+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 0 turns"}
-{"timestamp_utc": "2026-04-20T01:34:34.698893+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 0 search hits"}
-{"timestamp_utc": "2026-04-20T01:34:34.702437+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
-{"timestamp_utc": "2026-04-20T01:34:34.812944+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
-{"timestamp_utc": "2026-04-20T01:34:34.814875+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 1 | Tools: 15"}
-{"timestamp_utc": "2026-04-20T01:34:40.465504+00:00", "level": "INFO", "component": "loop.reason", "message": "Resp: 108 chars"}
-{"timestamp_utc": "2026-04-20T01:34:40.468124+00:00", "level": "INFO", "component": "loop.reason", "message": "Call: filesystem"}
-{"timestamp_utc": "2026-04-20T01:34:40.470226+00:00", "level": "INFO", "component": "loop.act", "message": "Exec: filesystem (args: {\"operation\": \"read\", \"path\": \"tests/tmp98kopssi/e2e_input.t...)"}
-{"timestamp_utc": "2026-04-20T01:34:40.471030+00:00", "level": "INFO", "component": "tool_exec", "message": "Executing tool: filesystem", "context": {"tool": "filesystem", "args_preview": "{\"operation\": \"read\", \"path\": \"tests/tmp98kopssi/e2e_input.txt\"}"}}
-{"timestamp_utc": "2026-04-20T01:34:40.472898+00:00", "level": "DEBUG", "component": "tool_exec", "message": "Tool 'filesystem' completed", "context": {"tool": "filesystem", "result_preview": "10\n20\n30\n"}}
-{"timestamp_utc": "2026-04-20T01:34:40.474711+00:00", "level": "INFO", "component": "loop.act", "message": "Result: 9 chars"}
-{"timestamp_utc": "2026-04-20T01:34:40.476091+00:00", "level": "INFO", "component": "loop.act", "message": "Sending tool result back to model"}
-{"timestamp_utc": "2026-04-20T01:34:45.505719+00:00", "level": "INFO", "component": "loop.integrate", "message": "Memory updated: Used filesystem → 10\n20\n30\n"}
-{"timestamp_utc": "2026-04-20T01:34:45.507695+00:00", "level": "INFO", "component": "loop.integrate", "message": "Chain detected - Re-looping"}
-{"timestamp_utc": "2026-04-20T01:34:45.509581+00:00", "level": "INFO", "component": "loop.perceive", "message": "--- CYCLE 2 / 10 ---"}
-{"timestamp_utc": "2026-04-20T01:34:45.515331+00:00", "level": "INFO", "component": "loop.perceive", "message": "Auto-chaining payload intercepted"}
-{"timestamp_utc": "2026-04-20T01:34:45.516930+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 4 turns"}
-{"timestamp_utc": "2026-04-20T01:34:45.518408+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 1 recent hits"}
-{"timestamp_utc": "2026-04-20T01:34:45.519692+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
-{"timestamp_utc": "2026-04-20T01:34:45.521077+00:00", "level": "INFO", "component": "loop.reason", "message": "Skipped model query — pushing auto-chained tool: filesystem"}
-{"timestamp_utc": "2026-04-20T01:34:45.522682+00:00", "level": "INFO", "component": "loop.act", "message": "Exec: filesystem (args: {\"operation\": \"write\", \"path\": \"tests/tmp98kopssi/e2e_output...)"}
-{"timestamp_utc": "2026-04-20T01:34:45.523435+00:00", "level": "INFO", "component": "tool_exec", "message": "Executing tool: filesystem", "context": {"tool": "filesystem", "args_preview": "{\"operation\": \"write\", \"path\": \"tests/tmp98kopssi/e2e_output.txt\", \"content\": \"60\"}"}}
-{"timestamp_utc": "2026-04-20T01:34:45.525527+00:00", "level": "DEBUG", "component": "tool_exec", "message": "Tool 'filesystem' completed", "context": {"tool": "filesystem", "result_preview": "Wrote 2 chars to 'tests/tmp98kopssi/e2e_output.txt'"}}
-{"timestamp_utc": "2026-04-20T01:34:45.526974+00:00", "level": "INFO", "component": "loop.act", "message": "Result: 51 chars"}
-{"timestamp_utc": "2026-04-20T01:34:45.528449+00:00", "level": "INFO", "component": "loop.act", "message": "Sending tool result back to model"}
-{"timestamp_utc": "2026-04-20T01:34:50.482207+00:00", "level": "INFO", "component": "loop.integrate", "message": "Memory updated: Used filesystem → Wrote 2 chars to 'tests/tmp98kopssi/e2e_output.txt'"}
-{"timestamp_utc": "2026-04-20T01:34:50.540349+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: analyze_directory"}
-{"timestamp_utc": "2026-04-20T01:34:50.542789+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: context_dump"}
-{"timestamp_utc": "2026-04-20T01:34:50.543991+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: fetch_url"}
-{"timestamp_utc": "2026-04-20T01:34:50.545601+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: filesystem"}
-{"timestamp_utc": "2026-04-20T01:34:50.546923+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_query"}
-{"timestamp_utc": "2026-04-20T01:34:50.548323+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_summarizer"}
-{"timestamp_utc": "2026-04-20T01:34:50.549387+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_manager"}
-{"timestamp_utc": "2026-04-20T01:34:50.550763+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_snapshot"}
-{"timestamp_utc": "2026-04-20T01:34:50.553312+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: screenshot"}
-{"timestamp_utc": "2026-04-20T01:34:50.554428+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: shell_exec"}
-{"timestamp_utc": "2026-04-20T01:34:50.555768+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: summarizer"}
-{"timestamp_utc": "2026-04-20T01:34:50.556856+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: system_config"}
-{"timestamp_utc": "2026-04-20T01:34:50.557959+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: task"}
-{"timestamp_utc": "2026-04-20T01:34:50.559106+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: web_search"}
-{"timestamp_utc": "2026-04-20T01:34:50.560442+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: youtube_transcript"}
-{"timestamp_utc": "2026-04-20T01:34:50.563915+00:00", "level": "INFO", "component": "core_loop", "message": "Core loop started", "context": {"model": "gemma4:26b", "continuous_mode": false}}
-{"timestamp_utc": "2026-04-20T01:34:50.565577+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input: 432 chars"}
-{"timestamp_utc": "2026-04-20T01:34:50.567016+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 0 turns"}
-{"timestamp_utc": "2026-04-20T01:34:50.733903+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 0 search hits"}
-{"timestamp_utc": "2026-04-20T01:34:50.735202+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
-{"timestamp_utc": "2026-04-20T01:34:50.830417+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
-{"timestamp_utc": "2026-04-20T01:34:50.831700+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 1 | Tools: 15"}
-{"timestamp_utc": "2026-04-20T01:34:58.222463+00:00", "level": "INFO", "component": "loop.reason", "message": "Resp: 109 chars"}
-{"timestamp_utc": "2026-04-20T01:34:58.224422+00:00", "level": "INFO", "component": "loop.reason", "message": "Call: analyze_directory"}
-{"timestamp_utc": "2026-04-20T01:34:58.226588+00:00", "level": "INFO", "component": "loop.act", "message": "Exec: analyze_directory (args: {\"directory\": \"tests/tmp6as4d_8f/logs\", \"recursive\": true})"}
-{"timestamp_utc": "2026-04-20T01:34:58.227559+00:00", "level": "INFO", "component": "tool_exec", "message": "Executing tool: analyze_directory", "context": {"tool": "analyze_directory", "args_preview": "{\"directory\": \"tests/tmp6as4d_8f/logs\", \"recursive\": true}"}}
-{"timestamp_utc": "2026-04-20T01:34:58.230957+00:00", "level": "DEBUG", "component": "tool_exec", "message": "Tool 'analyze_directory' completed", "context": {"tool": "analyze_directory", "result_preview": "=== DIRECTORY ANALYSIS: tests/tmp6as4d_8f/logs ===\n\n[STRUCTURE]\nFolders (2): 2026, 2026\\april\nFiles (2):\n  - 2026\\april\\srv.log (Modified: 2026-04-19 20:34:50)\n  - access.log (Modified: 2026-04-19 20:"}}
-{"timestamp_utc": "2026-04-20T01:34:58.232607+00:00", "level": "INFO", "component": "loop.act", "message": "Result: 552 chars"}
-{"timestamp_utc": "2026-04-20T01:34:58.234135+00:00", "level": "INFO", "component": "loop.act", "message": "Sending tool result back to model"}
-{"timestamp_utc": "2026-04-20T01:35:03.828288+00:00", "level": "INFO", "component": "loop.integrate", "message": "Memory updated: Used analyze_directory → === DIRECTORY ANALYSIS: tests/tmp6as4d_8f/logs ===\n\n[STRUCTURE]\nFolders (2): 2026, 2026\\april\nFiles (2):\n  - 2026\\april\\srv.log (Modified: 2026-04-19 20:34:50)\n  - access.log (Modified: 2026-04-19 20:34:50)\n\n[FILE CONTENTS] (Reading up to 8 files, output budget 12000 chars)\n\n--- 2026\\april\\srv.log (3 lines, 72 chars) ---\nBoot sequence initiated...\nCRITICAL_BUG detected at line 42\nRebooting...\n\n--- access.log (2 lines, 30 chars) ---\nUser logged in\nUser logged out\n\n[SUMMARY]\nTotal folders: 2\nTotal files: 2\nFiles analyzed: 2\nPriority files found: 0\n"}
-{"timestamp_utc": "2026-04-20T01:35:03.830298+00:00", "level": "INFO", "component": "loop.integrate", "message": "Chain detected - Re-looping"}
-{"timestamp_utc": "2026-04-20T01:35:03.831894+00:00", "level": "INFO", "component": "loop.perceive", "message": "--- CYCLE 2 / 15 ---"}
-{"timestamp_utc": "2026-04-20T01:35:03.833275+00:00", "level": "INFO", "component": "loop.perceive", "message": "Auto-chaining payload intercepted"}
-{"timestamp_utc": "2026-04-20T01:35:03.834665+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 4 turns"}
-{"timestamp_utc": "2026-04-20T01:35:03.836196+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 1 recent hits"}
-{"timestamp_utc": "2026-04-20T01:35:03.837600+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
-{"timestamp_utc": "2026-04-20T01:35:03.838921+00:00", "level": "INFO", "component": "loop.reason", "message": "Skipped model query — pushing auto-chained tool: filesystem"}
-{"timestamp_utc": "2026-04-20T01:35:03.840563+00:00", "level": "INFO", "component": "loop.act", "message": "Exec: filesystem (args: {\"operation\": \"write\", \"path\": \"tests/tmp6as4d_8f/logs/2026/...)"}
-{"timestamp_utc": "2026-04-20T01:35:03.841275+00:00", "level": "INFO", "component": "tool_exec", "message": "Executing tool: filesystem", "context": {"tool": "filesystem", "args_preview": "{\"operation\": \"write\", \"path\": \"tests/tmp6as4d_8f/logs/2026/april/srv.log\", \"content\": \"Boot sequence initiated...\\nRESOLVED_BUG detected at line 42\\nRebooting...\"}"}}
-{"timestamp_utc": "2026-04-20T01:35:03.843487+00:00", "level": "DEBUG", "component": "tool_exec", "message": "Tool 'filesystem' completed", "context": {"tool": "filesystem", "result_preview": "Wrote 72 chars to 'tests/tmp6as4d_8f/logs/2026/april/srv.log'"}}
-{"timestamp_utc": "2026-04-20T01:35:03.845237+00:00", "level": "INFO", "component": "loop.act", "message": "Result: 61 chars"}
-{"timestamp_utc": "2026-04-20T01:35:03.846948+00:00", "level": "INFO", "component": "loop.act", "message": "Sending tool result back to model"}
-{"timestamp_utc": "2026-04-20T01:35:08.827694+00:00", "level": "INFO", "component": "loop.integrate", "message": "Memory updated: Used filesystem → Wrote 72 chars to 'tests/tmp6as4d_8f/logs/2026/april/srv.log'"}
-{"timestamp_utc": "2026-04-20T01:42:00.332785+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 15 turns → 14 chars", "context": {"summary_id": 2, "covers_from_id": 1, "covers_to_id": 25, "turns_compressed": 15, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:42:00.412313+00:00", "level": "WARNING", "component": "loop.history_compressor", "message": "kernel returned empty summary — keeping raw turns, backing off before next attempt", "context": {"uncompressed_count": 35, "history_cap": 15, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:42:00.455063+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 20 turns → 17 chars", "context": {"summary_id": 1, "covers_from_id": 1, "covers_to_id": 20, "turns_compressed": 20, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:42:00.495176+00:00", "level": "ERROR", "component": "loop.history_compressor", "message": "kernel call raised RuntimeError: kernel blew up", "context": {"uncompressed_count": 35, "history_cap": 15}}
-{"timestamp_utc": "2026-04-20T01:42:06.146758+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_json"}
-{"timestamp_utc": "2026-04-20T01:42:06.147881+00:00", "level": "WARNING", "component": "tool_registry", "message": "Output truncated for dummy_json", "context": {"tool": "dummy_json", "total_chars": 18028, "cap": 16000}}
-{"timestamp_utc": "2026-04-20T01:42:06.158274+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_fail"}
-{"timestamp_utc": "2026-04-20T01:42:06.159288+00:00", "level": "ERROR", "component": "tool_registry", "message": "Execution error in dummy_fail", "context": {"tool": "dummy_fail", "error": "System broke fundamentally!"}}
-{"timestamp_utc": "2026-04-20T01:42:06.168468+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_huge"}
-{"timestamp_utc": "2026-04-20T01:42:06.169360+00:00", "level": "WARNING", "component": "tool_registry", "message": "Output truncated for dummy_huge", "context": {"tool": "dummy_huge", "total_chars": 18000, "cap": 16000}}
-{"timestamp_utc": "2026-04-20T01:42:56.461781+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 15 turns → 14 chars", "context": {"summary_id": 2, "covers_from_id": 1, "covers_to_id": 25, "turns_compressed": 15, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:42:56.542375+00:00", "level": "WARNING", "component": "loop.history_compressor", "message": "kernel returned empty summary — keeping raw turns, backing off before next attempt", "context": {"uncompressed_count": 35, "history_cap": 15, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:42:56.586122+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 20 turns → 17 chars", "context": {"summary_id": 1, "covers_from_id": 1, "covers_to_id": 20, "turns_compressed": 20, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:42:56.625118+00:00", "level": "ERROR", "component": "loop.history_compressor", "message": "kernel call raised RuntimeError: kernel blew up", "context": {"uncompressed_count": 35, "history_cap": 15}}
-{"timestamp_utc": "2026-04-20T01:43:02.211601+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_json"}
-{"timestamp_utc": "2026-04-20T01:43:02.212859+00:00", "level": "WARNING", "component": "tool_registry", "message": "Output truncated for dummy_json", "context": {"tool": "dummy_json", "total_chars": 18028, "cap": 16000}}
-{"timestamp_utc": "2026-04-20T01:43:02.219395+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_fail"}
-{"timestamp_utc": "2026-04-20T01:43:02.220323+00:00", "level": "ERROR", "component": "tool_registry", "message": "Execution error in dummy_fail", "context": {"tool": "dummy_fail", "error": "System broke fundamentally!"}}
-{"timestamp_utc": "2026-04-20T01:43:02.224886+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_huge"}
-{"timestamp_utc": "2026-04-20T01:43:02.225880+00:00", "level": "WARNING", "component": "tool_registry", "message": "Output truncated for dummy_huge", "context": {"tool": "dummy_huge", "total_chars": 18000, "cap": 16000}}
-{"timestamp_utc": "2026-04-20T01:43:39.070141+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 15 turns → 14 chars", "context": {"summary_id": 2, "covers_from_id": 1, "covers_to_id": 25, "turns_compressed": 15, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:43:39.144314+00:00", "level": "WARNING", "component": "loop.history_compressor", "message": "kernel returned empty summary — keeping raw turns, backing off before next attempt", "context": {"uncompressed_count": 35, "history_cap": 15, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:43:39.181690+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 20 turns → 17 chars", "context": {"summary_id": 1, "covers_from_id": 1, "covers_to_id": 20, "turns_compressed": 20, "model_used": "m1"}}
-{"timestamp_utc": "2026-04-20T01:43:39.217040+00:00", "level": "ERROR", "component": "loop.history_compressor", "message": "kernel call raised RuntimeError: kernel blew up", "context": {"uncompressed_count": 35, "history_cap": 15}}
-{"timestamp_utc": "2026-04-20T01:43:44.807653+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_json"}
-{"timestamp_utc": "2026-04-20T01:43:44.808882+00:00", "level": "WARNING", "component": "tool_registry", "message": "Output truncated for dummy_json", "context": {"tool": "dummy_json", "total_chars": 18028, "cap": 16000}}
-{"timestamp_utc": "2026-04-20T01:43:44.813658+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_fail"}
-{"timestamp_utc": "2026-04-20T01:43:44.814523+00:00", "level": "ERROR", "component": "tool_registry", "message": "Execution error in dummy_fail", "context": {"tool": "dummy_fail", "error": "System broke fundamentally!"}}
-{"timestamp_utc": "2026-04-20T01:43:44.818732+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: dummy_huge"}
-{"timestamp_utc": "2026-04-20T01:43:44.819679+00:00", "level": "WARNING", "component": "tool_registry", "message": "Output truncated for dummy_huge", "context": {"tool": "dummy_huge", "total_chars": 18000, "cap": 16000}}
+{"timestamp_utc": "2026-04-21T20:04:21.661245+00:00", "level": "INFO", "component": "sentinel_logger", "message": "Log cleared by session reset"}
+{"timestamp_utc": "2026-04-21T20:04:22.459009+00:00", "level": "INFO", "component": "core_loop", "message": "Session Sentinel: Cleared (Normal exit)"}
+{"timestamp_utc": "2026-04-21T20:04:26.272480+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: analyze_directory"}
+{"timestamp_utc": "2026-04-21T20:04:26.273933+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: context_dump"}
+{"timestamp_utc": "2026-04-21T20:04:26.275247+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: fetch_url"}
+{"timestamp_utc": "2026-04-21T20:04:26.276615+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: filesystem"}
+{"timestamp_utc": "2026-04-21T20:04:26.279274+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_query"}
+{"timestamp_utc": "2026-04-21T20:04:26.280508+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: log_summarizer"}
+{"timestamp_utc": "2026-04-21T20:04:26.281751+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_manager"}
+{"timestamp_utc": "2026-04-21T20:04:26.282897+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: memory_snapshot"}
+{"timestamp_utc": "2026-04-21T20:04:26.284012+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: screenshot"}
+{"timestamp_utc": "2026-04-21T20:04:26.284894+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: shell_exec"}
+{"timestamp_utc": "2026-04-21T20:04:26.285969+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: summarizer"}
+{"timestamp_utc": "2026-04-21T20:04:26.286911+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: system_config"}
+{"timestamp_utc": "2026-04-21T20:04:26.287858+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: task"}
+{"timestamp_utc": "2026-04-21T20:04:26.288866+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: web_search"}
+{"timestamp_utc": "2026-04-21T20:04:26.290110+00:00", "level": "DEBUG", "component": "tool_registry", "message": "Loaded tool: youtube_transcript"}
+{"timestamp_utc": "2026-04-21T20:04:30.531689+00:00", "level": "INFO", "component": "core_loop", "message": "Core loop started", "context": {"model": "gemma4:26b", "autonomy_limit": 12}}
+{"timestamp_utc": "2026-04-21T20:04:44.595859+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input: 699 chars"}
+{"timestamp_utc": "2026-04-21T20:04:44.598219+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 10 turns"}
+{"timestamp_utc": "2026-04-21T20:04:44.599476+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: Summary #86 (1..5919)"}
+{"timestamp_utc": "2026-04-21T20:04:44.876103+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 5 search hits"}
+{"timestamp_utc": "2026-04-21T20:04:44.877574+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
+{"timestamp_utc": "2026-04-21T20:04:44.878964+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tasks: 0 pending / 4 total"}
+{"timestamp_utc": "2026-04-21T20:04:44.978676+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
+{"timestamp_utc": "2026-04-21T20:04:44.980238+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 11 | Tools: 15"}
+{"timestamp_utc": "2026-04-21T20:04:52.570208+00:00", "level": "INFO", "component": "loop.reason", "message": "Resp: 372 chars"}
+{"timestamp_utc": "2026-04-21T20:04:52.571888+00:00", "level": "INFO", "component": "loop.reason", "message": "Call: None"}
+{"timestamp_utc": "2026-04-21T20:04:52.573260+00:00", "level": "INFO", "component": "loop.act", "message": "Returning direct response"}
+{"timestamp_utc": "2026-04-21T20:04:52.574633+00:00", "level": "INFO", "component": "loop.integrate", "message": "Transient cycle, no tool — skipping conversation persistence."}
+{"timestamp_utc": "2026-04-21T20:04:52.575902+00:00", "level": "INFO", "component": "loop.observe", "message": "Loop idle - No chains"}
+{"timestamp_utc": "2026-04-21T20:06:13.716810+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input: 12 chars"}
+{"timestamp_utc": "2026-04-21T20:06:13.719502+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 10 turns"}
+{"timestamp_utc": "2026-04-21T20:06:13.720782+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: Summary #86 (1..5919)"}
+{"timestamp_utc": "2026-04-21T20:06:13.881099+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 5 search hits"}
+{"timestamp_utc": "2026-04-21T20:06:13.882494+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
+{"timestamp_utc": "2026-04-21T20:06:13.883829+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tasks: 0 pending / 4 total"}
+{"timestamp_utc": "2026-04-21T20:06:13.976702+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
+{"timestamp_utc": "2026-04-21T20:06:13.977908+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 11 | Tools: 15"}
+{"timestamp_utc": "2026-04-21T20:06:27.219698+00:00", "level": "INFO", "component": "loop.reason", "message": "Resp: 1311 chars"}
+{"timestamp_utc": "2026-04-21T20:06:27.221312+00:00", "level": "INFO", "component": "loop.reason", "message": "Call: None"}
+{"timestamp_utc": "2026-04-21T20:06:27.222742+00:00", "level": "INFO", "component": "loop.act", "message": "Returning direct response"}
+{"timestamp_utc": "2026-04-21T20:06:27.225121+00:00", "level": "INFO", "component": "loop.integrate", "message": "No tool used — no memory update"}
+{"timestamp_utc": "2026-04-21T20:07:05.726060+00:00", "level": "INFO", "component": "loop.history_compressor", "message": "compressed 48 turns → 770 chars", "context": {"summary_id": 87, "covers_from_id": 1, "covers_to_id": 5967, "turns_compressed": 48, "model_used": "gemma4:26b"}}
+{"timestamp_utc": "2026-04-21T20:07:05.727539+00:00", "level": "INFO", "component": "loop.integrate", "message": "Compressed 48 turns -> #87 (770c)"}
+{"timestamp_utc": "2026-04-21T20:07:05.728821+00:00", "level": "INFO", "component": "loop.observe", "message": "Loop idle - No chains"}
+{"timestamp_utc": "2026-04-21T20:07:39.721370+00:00", "level": "INFO", "component": "loop.perceive", "message": "Input: 39 chars"}
+{"timestamp_utc": "2026-04-21T20:07:39.722932+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 10 turns"}
+{"timestamp_utc": "2026-04-21T20:07:39.724274+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: Summary #87 (1..5967)"}
+{"timestamp_utc": "2026-04-21T20:07:39.881249+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Mem: 5 search hits"}
+{"timestamp_utc": "2026-04-21T20:07:39.882761+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tools: 15 available"}
+{"timestamp_utc": "2026-04-21T20:07:39.883968+00:00", "level": "INFO", "component": "loop.contextualize", "message": "Tasks: 0 pending / 4 total"}
+{"timestamp_utc": "2026-04-21T20:07:39.971119+00:00", "level": "INFO", "component": "loop.reason", "message": "Model: gemma4:26b"}
+{"timestamp_utc": "2026-04-21T20:07:39.972484+00:00", "level": "INFO", "component": "loop.reason", "message": "Messages: 11 | Tools: 15"}
+{"timestamp_utc": "2026-04-21T20:07:52.877442+00:00", "level": "INFO", "component": "loop.reason", "message": "Resp: 1534 chars"}
+{"timestamp_utc": "2026-04-21T20:07:52.886775+00:00", "level": "INFO", "component": "loop.reason", "message": "Call: None"}
+{"timestamp_utc": "2026-04-21T20:07:52.888044+00:00", "level": "INFO", "component": "loop.act", "message": "Returning direct response"}
+{"timestamp_utc": "2026-04-21T20:07:52.890608+00:00", "level": "INFO", "component": "loop.integrate", "message": "No tool used — no memory update"}
+{"timestamp_utc": "2026-04-21T20:07:52.891959+00:00", "level": "INFO", "component": "loop.observe", "message": "Loop idle - No chains"}
+{"timestamp_utc": "2026-04-21T20:08:07.054194+00:00", "level": "INFO", "component": "core_loop", "message": "Session Sentinel: Cleared (Normal exit)"}

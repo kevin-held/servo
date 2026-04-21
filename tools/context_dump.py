@@ -113,6 +113,7 @@ def _get_loop_telemetry() -> dict:
             "hardware_throttle_total":      getattr(loop, "hardware_throttle_total", 0),
             "user_interrupts_total":        getattr(loop, "user_interrupts_total", 0),
             "history_compressions_total":   getattr(loop, "history_compressions_total", 0),
+            "tool_result_compressions_total": getattr(loop, "tool_result_compressions_total", 0),
             "max_auto_continues":           getattr(loop, "max_auto_continues", 2),
             "conversation_history":         getattr(loop, "conversation_history", 0),
             "default_conversation_history": getattr(loop, "default_conversation_history", 0),

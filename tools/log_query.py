@@ -53,7 +53,7 @@ def execute(
         )
 
         if not results:
-            return "No log entries match the given filters."
+            return "[]"
 
         return json.dumps(results, indent=2, ensure_ascii=False)
 

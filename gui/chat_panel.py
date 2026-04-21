@@ -183,6 +183,10 @@ class ChatPanel(QWidget):
         self.send_btn.setEnabled(False)
         self.input_submitted.emit(text, img_b64)
 
+    def append_message(self, sender: str, text: str, color: str = "#888888"):
+        """Public string injection for System messages"""
+        self._append(sender, text, color)
+
     def _append(self, sender: str, text: str, color: str):
         ts = time.strftime("%H:%M:%S")
         # Escape HTML in text

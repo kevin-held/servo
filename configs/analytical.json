@@ -1,0 +1,21 @@
+{
+  "model": "gemma4:26b",
+  "temperature": 0.4,
+  "max_tokens": 8192,
+  "conversation_history": 15,
+  "chain_limit": 8,
+  "autonomous_loop_limit": 12,
+  "max_auto_continues": 2,
+  "verbosity": "Detailed",
+  "stream_enabled": false,
+  "summarize_contextualize": "True",
+  "summarize_history_integrate": "True",
+  "summarize_tool_results": "True",
+  "history_compression_trigger": "5.0",
+  "history_compression_target_chars": "800",
+  "tool_result_compression_threshold": "4000",
+  "tool_result_compression_target_chars": "500",
+  "hardware_throttling_enabled": true,
+  "hardware_throttle_threshold_enter": 95.0,
+  "hardware_throttle_threshold_exit": 90.0
+}

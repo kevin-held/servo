@@ -1,0 +1,12 @@
+PROPOSAL: Multi-Agent Consensus Simulation
+
+**Concept:**
+Deploy multiple role overlays (Analyst, Architect, Scholar) as independent 'voters' on each branch proposal.
+
+**Mechanism:**
+1. **Generation:** Divergence phase creates branches.
+2. **Evaluation:** Each role reads the branch and writes a `.critique` file.
+3. **Aggregation:** The Orchestrator synthesizes the critiques to select the winner.
+
+**Benefit:**
+Simulates a more robust, multi-perspective validation process within the sandbox, reducing the risk of single-role bias during high-temperature divergence.

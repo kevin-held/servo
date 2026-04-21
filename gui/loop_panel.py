@@ -2,8 +2,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel,
     QTreeWidget, QTreeWidgetItem, QFrame,
     QSpinBox, QDoubleSpinBox, QComboBox, QGridLayout,
-    QCheckBox, QPushButton
+    QCheckBox, QPushButton, QGroupBox, QHBoxLayout
 )
+from core.identity import get_system_defaults
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QFont, QColor
 
@@ -72,6 +73,7 @@ class LoopPanel(QWidget):
         self._current_cycle_item:   QTreeWidgetItem   = None
         self._step_group_items:     dict              = {}
         self._build_ui()
+        self._sync_ranges()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -80,85 +82,259 @@ class LoopPanel(QWidget):
 
         self._section_label("SYSTEM CONTROLS", layout)
 
-        # Stop & Continuous Row
-        mode_layout = QGridLayout()
-        mode_layout.setSpacing(8)
+        # ── PROFILE SELECTION ──
+        profile_frame = QFrame()
+        profile_frame.setStyleSheet("background: #1a1a1a; border-radius: 4px; border: 1px solid #2a2a2a;")
+        pf_layout = QHBoxLayout(profile_frame)
+        pf_layout.setContentsMargins(8, 4, 8, 4)
         
-        self.continuous_check = QCheckBox("Continuous Mode")
-        self.continuous_check.setStyleSheet("color: #FF5722; font-size: 11px; font-weight: bold;")
-        self.continuous_check.toggled.connect(self._on_continuous_toggled)
+        prof_lbl = QLabel("Active Profile:")
+        prof_lbl.setStyleSheet("color: #888; font-size: 11px; font-weight: bold;")
+        self.profile_combo = QComboBox()
+        self.profile_combo.setEditable(True)
+        self.profile_combo.setStyleSheet("""
+            QComboBox { background: #111; color: #00E5FF; border: none; font-size: 11px; font-weight: bold; }
+            QComboBox::drop-down { border: none; }
+            QComboBox QAbstractItemView { background: #111; color: #00E5FF; }
+        """)
         
-        self.stop_btn = QPushButton("STOP SEQUENCE")
+        self.save_profile_btn = QPushButton("💾")
+        self.save_profile_btn.setFixedSize(24, 24)
+        self.save_profile_btn.setToolTip("Save Current Profile")
+        self.save_profile_btn.setStyleSheet("""
+            QPushButton { 
+                background: #111; color: #00E5FF; border: 1px solid #2a2a2a; border-radius: 4px; 
+                font-size: 12px; font-weight: bold;
+            }
+            QPushButton:hover { background: #1a1a1a; border-color: #00E5FF; }
+            QPushButton:pressed { background: #00E5FF; color: black; }
+        """)
+        
+        pf_layout.addWidget(prof_lbl)
+        pf_layout.addWidget(self.profile_combo, 1)
+        pf_layout.addWidget(self.save_profile_btn)
+        layout.addWidget(profile_frame)
+
+        # ── AUTONOMY GROUP ──
+        autonomy_group = QGroupBox("Autonomy && Endurance")
+        autonomy_group.setStyleSheet("""
+            QGroupBox { color: #888; font-size: 10px; font-weight: bold; margin-top: 10px; border: 1px solid #222; border-radius: 4px; padding-top: 10px; }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }
+        """)
+        ag_layout = QVBoxLayout(autonomy_group)
+        
+        # STOP Button Row
+        stop_layout = QHBoxLayout()
+        self.stop_btn = QPushButton("STOP")
         self.stop_btn.setFixedHeight(24)
         self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background: #D32F2F; color: white; border-radius: 4px; font-weight: bold; font-size: 10px; letter-spacing: 1px;
-            }
-            QPushButton:hover { background: #F44336; }
+            QPushButton { background: #E61717; color: white; border-radius: 4px; font-weight: bold; font-size: 11px; letter-spacing: 2px; }
+            QPushButton:hover { background: #FF2E2E; }
+            QPushButton:pressed { background: #990000; }
         """)
-        mode_layout.addWidget(self.continuous_check, 0, 0)
-        mode_layout.addWidget(self.stop_btn, 0, 1)
-        layout.addLayout(mode_layout)
+        stop_layout.addWidget(self.stop_btn)
+        ag_layout.addLayout(stop_layout)
 
-        controls_frame = QFrame()
-        controls_frame.setStyleSheet("background: #161616; border-radius: 6px;")
-        cf_layout = QVBoxLayout(controls_frame)
-        cf_layout.setContentsMargins(8, 8, 8, 8)
-        cf_layout.setSpacing(6)
+        ag_grid = QGridLayout()
+        ag_grid.setSpacing(8)
+        
+        lbl5 = QLabel("Chain Limit:")
+        lbl5.setToolTip("Max tools per turn cycle.")
+        self.loop_limit_spin = QSpinBox()
+        self.loop_limit_spin.setFixedWidth(102)
+        
+        lbl7 = QLabel("Autonomous Loop Limit:")
+        lbl7.setToolTip("Max re-loops before forced pause. 0=Infinite.")
+        self.autonomous_limit_spin = QSpinBox()
+        self.autonomous_limit_spin.setSpecialValueText("Endless (0)")
+        self.autonomous_limit_spin.setFixedWidth(102)
+        
+        lbl6 = QLabel("Max Auto Continues:")
+        lbl6.setToolTip("Max response stitchings (the 'glue').")
+        self.auto_continue_spin = QSpinBox()
+        self.auto_continue_spin.setFixedWidth(102)
 
-        grid = QGridLayout()
-        grid.setSpacing(8)
+        ag_grid.addWidget(lbl5, 0, 0); ag_grid.addWidget(self.loop_limit_spin, 0, 1)
+        ag_grid.addWidget(lbl7, 1, 0); ag_grid.addWidget(self.autonomous_limit_spin, 1, 1)
+        ag_grid.addWidget(lbl6, 2, 0); ag_grid.addWidget(self.auto_continue_spin, 2, 1)
+        
+        ag_layout.addLayout(ag_grid)
+        layout.addWidget(autonomy_group)
 
-        lbl = QLabel("Conversation History:")
-        lbl.setStyleSheet("color: #888; font-size: 11px;")
-        self.context_spin = QSpinBox()
-        self.context_spin.setRange(1, 20)
-        self.context_spin.setValue(5)
-        self.context_spin.setStyleSheet("background: #222; color: #ccc; border: 1px solid #333;")
+        # ── REASONING GROUP ──
+        reason_group = QGroupBox("Resource Reasoning")
+        reason_group.setStyleSheet(autonomy_group.styleSheet())
+        rg_layout = QVBoxLayout(reason_group)
+        rg_grid = QGridLayout()
+        rg_grid.setSpacing(8)
 
         lbl2 = QLabel("Temperature:")
-        lbl2.setStyleSheet("color: #888; font-size: 11px;")
         self.temp_spin = QDoubleSpinBox()
-        self.temp_spin.setRange(0.0, 1.0)
         self.temp_spin.setSingleStep(0.1)
-        self.temp_spin.setValue(0.6)
-        self.temp_spin.setStyleSheet("background: #222; color: #ccc; border: 1px solid #333;")
+        self.temp_spin.setFixedWidth(102)
         
         lbl3 = QLabel("Max Tokens:")
-        lbl3.setStyleSheet("color: #888; font-size: 11px;")
         self.tokens_spin = QSpinBox()
-        self.tokens_spin.setRange(128, 8192)
         self.tokens_spin.setSingleStep(256)
-        self.tokens_spin.setValue(2048)
-        self.tokens_spin.setStyleSheet("background: #222; color: #ccc; border: 1px solid #333;")
+        self.tokens_spin.setFixedWidth(102)
 
+        lbl = QLabel("Conversation History:")
+        self.context_spin = QSpinBox()
+        self.context_spin.setFixedWidth(102)
+        
         lbl4 = QLabel("Verbosity:")
-        lbl4.setStyleSheet("color: #888; font-size: 11px;")
         self.verbosity_combo = QComboBox()
         self.verbosity_combo.addItems(["Concise", "Normal", "Detailed"])
-        self.verbosity_combo.setCurrentText("Normal")
-        self.verbosity_combo.setStyleSheet("background: #222; color: #ccc; border: 1px solid #333;")
+        self.verbosity_combo.setFixedWidth(102)
+        
+        rg_grid.addWidget(lbl2, 0, 0); rg_grid.addWidget(self.temp_spin, 0, 1)
+        rg_grid.addWidget(lbl3, 1, 0); rg_grid.addWidget(self.tokens_spin, 1, 1)
+        rg_grid.addWidget(lbl, 2, 0);  rg_grid.addWidget(self.context_spin, 2, 1)
+        rg_grid.addWidget(lbl4, 3, 0); rg_grid.addWidget(self.verbosity_combo, 3, 1)
+        
+        # Hardware Throttling (Moved here per D-20260421-09)
+        ag_grid_hw = QGridLayout()
+        self.throttle_enable_check = QCheckBox("Hardware Throttling")
+        self.throttle_enable_check.setStyleSheet("color: #aaa; font-size: 11px; font-weight: bold;")
+        
+        self.throttle_enter_spin = QSpinBox()
+        self.throttle_enter_spin.setSuffix("%")
+        self.throttle_enter_spin.setFixedWidth(50)
+        
+        self.throttle_exit_spin = QSpinBox()
+        self.throttle_exit_spin.setSuffix("%")
+        self.throttle_exit_spin.setFixedWidth(50)
+        
+        ag_grid_hw.addWidget(self.throttle_enable_check, 0, 0)
+        ag_grid_hw.addWidget(self.throttle_enter_spin, 0, 1)
+        ag_grid_hw.addWidget(self.throttle_exit_spin, 0, 2)
+        
+        rg_layout.addSpacing(4)
+        rg_layout.addLayout(ag_grid_hw)
+        rg_layout.addSpacing(4)
 
-        lbl5 = QLabel("Chain Limit:")
-        lbl5.setStyleSheet("color: #888; font-size: 11px;")
-        self.loop_limit_spin = QSpinBox()
-        self.loop_limit_spin.setRange(1, 10)
-        self.loop_limit_spin.setValue(3)
-        self.loop_limit_spin.setStyleSheet("background: #222; color: #ccc; border: 1px solid #333;")
+        rg_layout.addLayout(rg_grid)
+        layout.addWidget(reason_group)
 
-        grid.addWidget(lbl, 0, 0)
-        grid.addWidget(self.context_spin, 0, 1)
-        grid.addWidget(lbl2, 1, 0)
-        grid.addWidget(self.temp_spin, 1, 1)
-        grid.addWidget(lbl3, 2, 0)
-        grid.addWidget(self.tokens_spin, 2, 1)
-        grid.addWidget(lbl4, 3, 0)
-        grid.addWidget(self.verbosity_combo, 3, 1)
-        grid.addWidget(lbl5, 4, 0)
-        grid.addWidget(self.loop_limit_spin, 4, 1)
+        # ── SUMMARIZER SETTINGS ──
+        summarizer_group = QGroupBox("Summarizer Settings")
+        summarizer_group.setStyleSheet(autonomy_group.styleSheet())
+        sg_layout = QVBoxLayout(summarizer_group)
+        sg_layout.setSpacing(4)
+        
+        # 1. Prior Context
+        self.summarize_context_check = QCheckBox("Prior Context")
+        self.summarize_context_check.setStyleSheet("color: #aaa; font-size: 11px;")
+        sg_layout.addWidget(self.summarize_context_check)
 
-        cf_layout.addLayout(grid)
-        layout.addWidget(controls_frame)
+        # 2. History (Trigger/Target)
+        hist_row = QHBoxLayout()
+        self.summarize_history_check = QCheckBox("History")
+        self.summarize_history_check.setStyleSheet("color: #aaa; font-size: 11px;")
+        
+        lbl_h_mult = QLabel("Trig:")
+        lbl_h_mult.setStyleSheet("color: #666; font-size: 10px;")
+        self.summarize_history_multiplier_spin = QDoubleSpinBox()
+        self.summarize_history_multiplier_spin.setSuffix("x")
+        self.summarize_history_multiplier_spin.setFixedWidth(50)
+        
+        lbl_h_target = QLabel("Tgt:")
+        lbl_h_target.setStyleSheet("color: #666; font-size: 10px;")
+        self.summarize_history_target_spin = QSpinBox()
+        self.summarize_history_target_spin.setFixedWidth(50)
+        
+        hist_row.addWidget(self.summarize_history_check)
+        hist_row.addStretch()
+        hist_row.addWidget(lbl_h_mult); hist_row.addWidget(self.summarize_history_multiplier_spin)
+        hist_row.addWidget(lbl_h_target); hist_row.addWidget(self.summarize_history_target_spin)
+        sg_layout.addLayout(hist_row)
+
+        # 3. Tools
+        tool_row = QHBoxLayout()
+        self.summarize_tool_check = QCheckBox("Tools")
+        self.summarize_tool_check.setStyleSheet("color: #aaa; font-size: 11px;")
+        
+        lbl_t_thresh = QLabel("Trig:")
+        lbl_t_thresh.setStyleSheet("color: #666; font-size: 10px;")
+        self.summarize_tool_threshold_spin = QSpinBox()
+        self.summarize_tool_threshold_spin.setSuffix("c")
+        self.summarize_tool_threshold_spin.setFixedWidth(50)
+        
+        lbl_t_target = QLabel("Tgt:")
+        lbl_t_target.setStyleSheet("color: #666; font-size: 10px;")
+        self.summarize_tool_target_spin = QSpinBox()
+        self.summarize_tool_target_spin.setFixedWidth(50)
+        
+        tool_row.addWidget(self.summarize_tool_check)
+        tool_row.addStretch()
+        tool_row.addWidget(lbl_t_thresh); tool_row.addWidget(self.summarize_tool_threshold_spin)
+        tool_row.addWidget(lbl_t_target); tool_row.addWidget(self.summarize_tool_target_spin)
+        sg_layout.addLayout(tool_row)
+
+        # 4. Files
+        file_grid = QGridLayout()
+        self.summarize_context_threshold_check = QCheckBox("Files")
+        self.summarize_context_threshold_check.setStyleSheet("color: #aaa; font-size: 11px;")
+        
+        lbl_f_thresh = QLabel("Trigger:")
+        lbl_f_thresh.setStyleSheet("color: #666; font-size: 10px;")
+        self.summarize_context_threshold_spin = QSpinBox()
+        self.summarize_context_threshold_spin.setSuffix(" L")
+        self.summarize_context_threshold_spin.setFixedWidth(60)
+        
+        file_grid.addWidget(self.summarize_context_threshold_check, 0, 0)
+        file_grid.addWidget(lbl_f_thresh, 0, 1); file_grid.addWidget(self.summarize_context_threshold_spin, 0, 2)
+        sg_layout.addLayout(file_grid)
+
+        # 5. UI/Thinking (D-20260421-12)
+        self.show_thinking_check = QCheckBox("Show Thinking Blocks")
+        self.show_thinking_check.setStyleSheet("color: #00E5FF; font-size: 11px; font-weight: bold;")
+        sg_layout.addWidget(self.show_thinking_check)
+
+        layout.addWidget(summarizer_group)
+
+        # Master Spinbox Styling — Added Cyan Accents (D-20260421-03)
+        spin_style = """
+            QSpinBox, QDoubleSpinBox {
+                background: #111;
+                color: #eee;
+                border: 1px solid #333;
+                border-radius: 3px;
+                padding: 1px 4px;
+                font-size: 11px;
+            }
+            QSpinBox::up-button, QDoubleSpinBox::up-button {
+                subcontrol-origin: border; subcontrol-position: top right;
+                width: 14px; border-left: 1px solid #333; background: #1a1a1a;
+                border-top-right-radius: 3px;
+            }
+            QSpinBox::down-button, QDoubleSpinBox::down-button {
+                subcontrol-origin: border; subcontrol-position: bottom right;
+                width: 14px; border-left: 1px solid #333; background: #1a1a1a;
+                border-bottom-right-radius: 3px;
+            }
+            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+                background: #222;
+            }
+            QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+                image: none; border-left: 3px solid transparent; border-right: 3px solid transparent;
+                border-bottom: 3px solid #00E5FF; width: 0; height: 0;
+            }
+            QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+                image: none; border-left: 3px solid transparent; border-right: 3px solid transparent;
+                border-top: 3px solid #00E5FF; width: 0; height: 0;
+            }
+        """
+        for spin in self.findChildren(QSpinBox) + self.findChildren(QDoubleSpinBox):
+            spin.setStyleSheet(spin_style)
+
+        for combo in self.findChildren(QComboBox):
+            if combo != self.profile_combo:
+                combo.setStyleSheet("background: #1a1a1a; color: #ccc; border: 1px solid #333; font-size: 11px;")
+        
+        for lbl in self.findChildren(QLabel):
+            if not lbl.styleSheet():
+                lbl.setStyleSheet("color: #ccc; font-size: 11px;")
 
         self._section_label("LOOP STATE", layout)
 
@@ -204,9 +380,35 @@ class LoopPanel(QWidget):
     def _section_label(self, text: str, layout: QVBoxLayout):
         lbl = QLabel(text)
         lbl.setStyleSheet(
-            "color: #888; font-size: 10px; font-weight: bold; letter-spacing: 2px;"
+            "color: #aaa; font-size: 10px; font-weight: bold; letter-spacing: 2px;"
         )
         layout.addWidget(lbl)
+    
+    def _sync_ranges(self):
+        """Loads and applies numeric safety bounds from system_defaults.json."""
+        bounds = get_system_defaults().get("bounds", {})
+        if not bounds: return
+        
+        mapping = {
+            "temperature":                         self.temp_spin,
+            "max_tokens":                          self.tokens_spin,
+            "conversation_history":                self.context_spin,
+            "chain_limit":                         self.loop_limit_spin,
+            "autonomous_loop_limit":               self.autonomous_limit_spin,
+            "max_auto_continues":                  self.auto_continue_spin,
+            "history_compression_trigger":         self.summarize_history_multiplier_spin,
+            "history_compression_target_chars":    self.summarize_history_target_spin,
+            "tool_result_compression_threshold":    self.summarize_tool_threshold_spin,
+            "tool_result_compression_target_chars": self.summarize_tool_target_spin,
+            "summarize_read_threshold":            self.summarize_context_threshold_spin,
+            "hardware_throttle_threshold_enter":    self.throttle_enter_spin,
+            "hardware_throttle_threshold_exit":     self.throttle_exit_spin,
+        }
+        
+        for key, widget in mapping.items():
+            if key in bounds:
+                lo, hi = bounds[key]
+                widget.setRange(lo, hi)
 
     # ── Slots ─────────────────────────────────────
 
@@ -261,10 +463,3 @@ class LoopPanel(QWidget):
         tool_item.setExpanded(True)
 
 
-    @Slot(bool)
-    def _on_continuous_toggled(self, checked: bool):
-        self.loop_limit_spin.setEnabled(not checked)
-        if checked:
-            self.loop_limit_spin.setStyleSheet("background: #111; color: #555; border: 1px solid #222;")
-        else:
-            self.loop_limit_spin.setStyleSheet("background: #222; color: #ccc; border: 1px solid #333;")

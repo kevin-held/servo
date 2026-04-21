@@ -1,18 +1,16 @@
 {
   "name": "Servo",
-  "version": "0.8.0",
+  "version": "0.8.3",
   "layers": {
     "cortex": "runtime (core/loop.py)",
-    "persona": "identity (codex/persona_core.md) + overlays (roles.json)",
-    "codex": "canonical truth (codex/)"
+    "persona": "identity (codex/manifests/persona_core.md)",
+    "codex": "canonical truth (codex/manifests/)"
   },
   "loop": ["PERCEIVE", "CONTEXTUALIZE", "REASON", "ACT", "INTEGRATE", "OBSERVE"],
   "directives": ["done", "chain", "continue", "tool_confirm", "snooze", "task_nudge"],
-  "roles": {
+  "identity": {
     "default": "servo",
-    "keys": ["servo", "sentinel", "analyst", "architect", "orchestrator", "scholar", "guardian"],
-    "overlay_fields": ["voice_overlay", "format_bias", "risk_tolerance"],
-    "selection": "priority asc, then most-overdue desc"
+    "overlay_fields": ["voice_overlay", "format_bias", "risk_tolerance"]
   },
   "stack": {
     "ui": "PySide6",
@@ -20,36 +18,44 @@
     "state": "SQLite(WAL) + ChromaDB"
   },
   "workspace_policy": {
-    "agent_writes_to": ["workspace/<model_safe_name>/", "codex/"],
+    "agent_writes_to": ["workspace/<model_safe_name>/", "codex/manifests/"],
     "default_scratch": "workspace/<model_safe_name>/",
     "codex_writers": {
-      "skill_map.md": "Orchestrator (via proposal)",
-      "role_manifests/*.md": "Orchestrator (via proposal)",
-      "decisions.md": "any role (append-only)",
-      "history.md": "any role (append-only)",
-      "persona_core.md": "Kevin only",
-      "log_digest.md":   "tool-only (log_summarizer, append-only)"
+      "manifests/skill_map.md": "Registry documentation",
+      "role_manifests/*.md": "[ARCHIVED] Documentation",
+      "manifests/decisions.md": "any authorized logic (append-only)",
+      "manifests/history.md": "any authorized logic (append-only)",
+      "manifests/persona_core.md": "Kevin only",
+      "manifests/log_digest.md":   "tool-only (log_summarizer, append-only)"
+    },
+    "task_level_manifests": {
+      "purpose": "Experimental threads (Dream Pads).",
+      "location": "workspace/<model>/dream_pad/dream_manifest.md",
+      "template": "codex/manifests/dream_pad_manifest_template.md"
     },
     "workspace_writers": {
-      "architecture_review_<v>.md": "Scholar (bumps prior version to old_stuff/)",
-      "change_proposal_<v>.md":     "Architect or Orchestrator",
-      "critique_<v>.md":            "Analyst",
-      "old_stuff/":                 "Scholar archives closed proposals + stale reviews; Architect archives superseded reviews"
+      "architecture_review_<v>.md": "Synthesis Logic",
+      "change_proposal_<v>.md":     "Engineering Logic",
+      "critique_<v>.md":            "Analysis Logic",
+      "old_stuff/":                 "Archival Logic"
     }
   },
   "memory_summarization": {
-    "phase":       "2 conversation-history compression",
-    "scope":       "cold logs (>24h) + conversation history at INTEGRATE; kernel shared",
+    "phase":       "3 per-turn tool-result compression",
+    "scope":       "cold logs (>24h) + conversation history (cap-driven) + tool results (per-turn) at INTEGRATE; kernel shared",
     "kernel":      "tools/summarizer.py",
     "drivers": {
       "cold_logs":            "tools/log_summarizer.py",
-      "conversation_history": "core/history_compressor.py"
+      "conversation_history": "core/history_compressor.py",
+      "tool_results":         "core/tool_result_compressor.py"
     },
     "destinations": {
-      "cold_logs":            "codex/log_digest.md",
-      "conversation_history": "SQLite conversation_summary table -> [PRIOR CONTEXT] block in system prompt; covered raw turns filtered from message list"
+      "cold_logs":            "codex/manifests/log_digest.md",
+      "conversation_history": "SQLite conversation_summary table -> [PRIOR CONTEXT] block in system prompt; covered raw turns filtered from message list",
+      "tool_results":         "SQLite conversation_history (user role) inline, prefixed 'Tool result (<tool>, compressed N->M chars):'"
     },
-    "trigger_conversation":   "INTEGRATE fires maybe_compress() when uncompressed turns >= 2 * conversation_history cap (scales with hardware throttle)"
+    "trigger_conversation":   "INTEGRATE fires maybe_compress() when uncompressed turns >= 2 * conversation_history cap (scales with hardware throttle)",
+    "trigger_tool_results":   "INTEGRATE fires maybe_compress_tool_result() when len(str(tool_result)) > threshold_chars (default 4000); below-threshold and failure paths pass through raw"
   },
   "task_ledger": {
     "tool":   "tools/task.py (create|complete|list|clear)",

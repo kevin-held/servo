@@ -1,0 +1,12 @@
+PROPOSAL: Temporal Snapshotting
+
+**Concept:**
+Every 5 minutes of simulation time, the agent creates a 'state snapshot' of the `dream_pad` directory, including all active branches and hypotheses.
+
+**Mechanism:**
+1. **Trigger:** Timer-based or task-based.
+2. **Action:** `filesystem:list` and `filesystem:read` of all `.branch` and `.md` files, bundled into a single `.snapshot` file.
+3. **Recovery:** If a simulation branch leads to a dead-end or error, the agent can revert to the last known stable snapshot.
+
+**Benefit:**
+Provides a way to 'undo' bad divergence paths without losing the entire simulation progress.

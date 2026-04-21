@@ -1,0 +1,186 @@
+"""
+Unit tests for the SentinelLogger and log_query tool.
+"""
+
+import gzip
+import json
+import os
+import shutil
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+# Ensure project root is on the path
+sys.path.insert(0, str(Path(__file__).parent.parent.resolve()))
+
+
+class TestSentinelLogger(unittest.TestCase):
+    """Tests for core.sentinel_logger.SentinelLogger"""
+
+    def setUp(self):
+        """Create a fresh temp directory and re-initialize the logger for isolation."""
+        os.environ["SENTINEL_SILENT"] = "False"
+        self._temp_dir = tempfile.mkdtemp(prefix="sentinel_test_")
+        self._log_dir = Path(self._temp_dir) / "logs"
+        self._archive_dir = self._log_dir / "archive"
+        self._active_log = self._log_dir / "sentinel.jsonl"
+
+        # Patch module-level constants so the logger writes to our temp dir
+        import core.sentinel_logger as sl_mod
+        self._orig_log_dir = sl_mod._LOG_DIR
+        self._orig_archive_dir = sl_mod._ARCHIVE_DIR
+        self._orig_active_log = sl_mod._ACTIVE_LOG
+
+        sl_mod._LOG_DIR = self._log_dir
+        sl_mod._ARCHIVE_DIR = self._archive_dir
+        sl_mod._ACTIVE_LOG = self._active_log
+
+        # Force re-create the singleton, ensuring we shut down existing handles first
+        if sl_mod.SentinelLogger._instance:
+            sl_mod.SentinelLogger._instance.shutdown()
+        sl_mod.SentinelLogger._instance = None
+        sl_mod._logger = None
+
+        from core.sentinel_logger import get_logger
+        self.logger = get_logger()
+
+    def tearDown(self):
+        """Clean up temp dir and restore module constants."""
+        self.logger.shutdown()
+
+        import core.sentinel_logger as sl_mod
+        sl_mod._LOG_DIR = self._orig_log_dir
+        sl_mod._ARCHIVE_DIR = self._orig_archive_dir
+        sl_mod._ACTIVE_LOG = self._orig_active_log
+        sl_mod.SentinelLogger._instance = None
+        sl_mod._logger = None
+
+        shutil.rmtree(self._temp_dir, ignore_errors=True)
+
+    def test_log_entry_has_required_fields(self):
+        self.logger.log("INFO", "test_comp", "hello world")
+        with open(self._active_log, "r") as f:
+            entry = json.loads(f.readline())
+        self.assertIn("timestamp_utc", entry)
+        self.assertEqual(entry["level"], "INFO")
+        self.assertEqual(entry["component"], "test_comp")
+        self.assertEqual(entry["message"], "hello world")
+
+    def test_clear(self):
+        self.logger.log("INFO", "test", "pre-clear message")
+        self.logger.clear()
+        with open(self._active_log, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        self.assertEqual(len(lines), 1)
+        entry = json.loads(lines[0])
+        self.assertEqual(entry["message"], "Log cleared by session reset")
+
+    def test_query_skips_malformed_json(self):
+        self.logger.log("INFO", "test", "good 1")
+        with open(self._active_log, "a", encoding="utf-8") as f:
+            f.write("GARBAGE_LINE_NOT_JSON\n")
+        self.logger.log("INFO", "test", "good 2")
+        results = self.logger.query()
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0]["message"], "good 1")
+        self.assertEqual(results[1]["message"], "good 2")
+
+    def test_query_with_time_filters(self):
+        now = datetime.now(timezone.utc)
+        past = now - timedelta(hours=1)
+        future = now + timedelta(hours=1)
+        self.logger.log("INFO", "test", "msg")
+        self.assertEqual(len(self.logger.query(end_time=past)), 0)
+        self.assertEqual(len(self.logger.query(start_time=past, end_time=future)), 1)
+
+    def test_query_missing_file(self):
+        self.logger.shutdown()
+        if self._active_log.exists():
+            self._active_log.unlink()
+        self.assertEqual(self.logger.query(), [])
+
+    def test_rotation_creates_archive(self):
+        import core.sentinel_logger as sl_mod
+        orig_threshold = sl_mod._ROTATION_BYTES
+        sl_mod._ROTATION_BYTES = 100
+        try:
+            for i in range(10):
+                self.logger.log("INFO", "test", "x" * 50)
+            archives = list(self._archive_dir.glob("log_*.json.gz"))
+            self.assertGreater(len(archives), 0)
+        finally:
+            sl_mod._ROTATION_BYTES = orig_threshold
+
+    def test_purge_archives_exception_swallowed(self):
+        self._archive_dir.mkdir(parents=True, exist_ok=True)
+        dummy = self._archive_dir / "log_20000101_000000.json.gz"
+        dummy.write_text("dummy")
+        with patch("pathlib.Path.unlink", side_effect=OSError("denied")):
+            import core.sentinel_logger as sl_mod
+            orig_retention = sl_mod._RETENTION_DAYS
+            sl_mod._RETENTION_DAYS = -1
+            try:
+                self.logger._purge_old_archives()
+            finally:
+                sl_mod._RETENTION_DAYS = orig_retention
+
+    def test_parse_iso_edge_cases(self):
+        self.assertIsNone(self.logger._parse_iso(""))
+        self.assertIsNone(self.logger._parse_iso("bad"))
+        now = datetime.now()
+        self.assertEqual(self.logger._parse_iso(now), now)
+
+    def test_query_by_level(self):
+        self.logger.log("INFO", "test", "info msg")
+        self.logger.log("ERROR", "test", "error msg")
+        results = self.logger.query(level="ERROR")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["level"], "ERROR")
+
+    def test_get_error_counts(self):
+        self.logger.log("ERROR", "test", "err")
+        data = self.logger.get_error_counts(minutes=60, bucket_minutes=5)
+        self.assertEqual(len(data), 12)
+        total = sum(d["count"] for d in data)
+        self.assertEqual(total, 1)
+
+    def test_concurrent_writes(self):
+        def writer(tid):
+            for i in range(20):
+                self.logger.log("INFO", f"t{tid}", f"m{i}")
+        threads = [threading.Thread(target=writer, args=(i,)) for i in range(3)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        with open(self._active_log, "r") as f:
+            self.assertEqual(len(f.readlines()), 60)
+
+class TestLogQueryTool(unittest.TestCase):
+    def test_execute_basic(self):
+        from tools.log_query import execute
+        with patch("core.sentinel_logger.get_logger") as mock_get:
+            mock_get.return_value.query.return_value = [{"msg": "hi"}]
+            res = execute(limit=1)
+            self.assertIn("hi", res)
+
+    def test_execute_empty(self):
+        """Line 56: query returns []."""
+        from tools.log_query import execute
+        with patch("core.sentinel_logger.get_logger") as mock_get:
+            mock_get.return_value.query.return_value = []
+            res = execute()
+            self.assertEqual(res, "[]")
+
+    def test_execute_exception(self):
+        """Line 60-61: query raises exception."""
+        from tools.log_query import execute
+        with patch("core.sentinel_logger.get_logger", side_effect=Exception("query failed")):
+            res = execute()
+            self.assertIn("Error querying logs: query failed", res)
+
+if __name__ == "__main__":
+    unittest.main()

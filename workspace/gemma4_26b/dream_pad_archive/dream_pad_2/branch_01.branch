@@ -1,0 +1,12 @@
+PROPOSAL: Recursive Context Injection
+
+**Concept:**
+Instead of a flat context window, the agent uses a hierarchical structure where each 'dream' layer contains a compressed summary of the previous layer's divergence.
+
+**Structure:**
+- Layer 0: Primary Context (System Prompt)
+- Layer 1: Active Task Context (Current Goal)
+- Layer 2: Transient Branch Context (The current .branch file)
+
+**Benefit:**
+Reduces token pressure during long-running continuous simulations by pruning irrelevant historical branches while retaining their semantic essence.

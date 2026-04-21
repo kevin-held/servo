@@ -70,6 +70,12 @@ class OllamaClient:
         self.base_url    = base_url
         self.temperature = 0.6
         self.num_predict = 16384 # manual testing stable with this param, not too high
+        self.num_ctx     = 32768 # Default context window
+        
+        # Telemetry: token counts from the most recent request (v0.9.0)
+        self.last_prompt_tokens   = 0
+        self.last_response_tokens = 0
+        self.total_tokens_used    = 0 # prompt + response
 
     def unload(self) -> bool:
         """Force Ollama to drop the model from VRAM by pinging it with keep_alive=0."""
@@ -135,6 +141,10 @@ class OllamaClient:
                         yield chunk
                     if data.get("done"):
                         truncated = data.get("done_reason") == "length"
+                        # v0.9.0: Capture usage metrics for the "Altitude Sensor"
+                        self.last_prompt_tokens   = data.get("prompt_eval_count", 0)
+                        self.last_response_tokens = data.get("eval_count", 0)
+                        self.total_tokens_used    = self.last_prompt_tokens + self.last_response_tokens
         finally:
             try:
                 response.close()

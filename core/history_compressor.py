@@ -58,27 +58,24 @@ from core.sentinel_logger import get_logger
 from tools.summarizer import summarize as _kernel_summarize
 
 
+from core.identity import get_system_defaults
+
 # ── Tunables ──────────────────────────────────────────────
 
+_DEFAULTS = get_system_defaults().get("defaults", {})
+
 # Compression fires when uncompressed turns reach this multiple of the
-# runtime conversation_history cap. 2× means: at the default cap of 15,
-# we compress at 30 uncompressed turns and leave the newest 15 raw.
-_TRIGGER_MULTIPLIER = 2
+# runtime conversation_history cap.
+_TRIGGER_MULTIPLIER = int(_DEFAULTS.get("history_compression_trigger", 2))
 
 # After a failed attempt (empty response), wait for this many more turns
-# before retrying. Measured in conversation_history caps so a tight-cap
-# run (e.g. hardware-throttled to 7) backs off proportionally.
 _FAILURE_BACKOFF_MULTIPLIER = 1
 
 # Key under which we stash the uncompressed-turn-count of the last
-# failed attempt. Lives in the `state` key-value table.
 _FAILURE_STATE_KEY = "compression_last_failed_turn_count"
 
-# Target length of the summary paragraph. The kernel's last-resort trim
-# is for the INPUT side; this is an informational guideline embedded in
-# the system_rules so the model produces something appropriately terse.
-# Not a hard cap — if the model runs long, we keep what we get.
-_SUMMARY_TARGET_CHARS = 800
+# Target length of the summary paragraph.
+_SUMMARY_TARGET_CHARS = int(_DEFAULTS.get("history_compression_target_chars", 800))
 
 
 # ── Prompt building ───────────────────────────────────────
@@ -100,7 +97,7 @@ def _format_turn(turn: dict) -> str:
     return f"[{role}] {content}"
 
 
-def _build_system_rules() -> str:
+def _build_system_rules(target_chars: int = _SUMMARY_TARGET_CHARS) -> str:
     """The HARD RULES block for conversation-history compression.
 
     Kept as a module-level constant-shaped helper so a future change to
@@ -131,7 +128,7 @@ def _build_system_rules() -> str:
         "verbose tool payloads. \"Used filesystem:list on workspace/ "
         "(200 files)\" beats a 200-line directory listing.\n"
         "5. Write ONE narrative paragraph — not bullets, not headings. "
-        f"Target ~{_SUMMARY_TARGET_CHARS} characters; overrun is fine "
+        f"Target ~{target_chars} characters; overrun is fine "
         "if detail is load-bearing. No preamble (\"Here is a summary…\") "
         "and no trailing meta-commentary."
     )
@@ -171,6 +168,8 @@ def _should_compress(
     uncompressed_count: int,
     history_cap: int,
     last_failed_at: int,
+    trigger_multiplier: int = _TRIGGER_MULTIPLIER,
+    backoff_multiplier: int = _FAILURE_BACKOFF_MULTIPLIER,
 ) -> bool:
     """Pure predicate: given counts, should compression fire this turn?
 
@@ -178,14 +177,14 @@ def _should_compress(
     at 2× after a failure that wants +1×) without rigging a full state
     store.
     """
-    threshold = _TRIGGER_MULTIPLIER * max(history_cap, 1)
+    threshold = trigger_multiplier * max(history_cap, 1)
     if uncompressed_count < threshold:
         return False
     # Backoff: after a failed attempt at N turns, wait for N+cap before
     # retrying. Without this, every user turn after the threshold would
     # trigger a fresh 300s summarize() call.
     if last_failed_at:
-        backoff_target = last_failed_at + _FAILURE_BACKOFF_MULTIPLIER * max(history_cap, 1)
+        backoff_target = last_failed_at + backoff_multiplier * max(history_cap, 1)
         if uncompressed_count < backoff_target:
             return False
     return True
@@ -193,7 +192,14 @@ def _should_compress(
 
 # ── Public entry point ────────────────────────────────────
 
-def maybe_compress(state: Any, history_cap: int) -> dict | None:
+def maybe_compress(
+    state: Any,
+    history_cap: int,
+    *,
+    trigger_multiplier: int = _TRIGGER_MULTIPLIER,
+    backoff_multiplier: int = _FAILURE_BACKOFF_MULTIPLIER,
+    target_chars: int = _SUMMARY_TARGET_CHARS,
+) -> dict | None:
     """Run compression if warranted. Return a report dict, or None.
 
     Parameters
@@ -232,7 +238,13 @@ def maybe_compress(state: Any, history_cap: int) -> dict | None:
     except (TypeError, ValueError):
         last_failed_at = 0
 
-    if not _should_compress(uncompressed_count, history_cap, last_failed_at):
+    if not _should_compress(
+        uncompressed_count,
+        history_cap,
+        last_failed_at,
+        trigger_multiplier=trigger_multiplier,
+        backoff_multiplier=backoff_multiplier,
+    ):
         return None
 
     # Decide the range to compress. We always keep the newest
@@ -255,7 +267,7 @@ def maybe_compress(state: Any, history_cap: int) -> dict | None:
     if not turns:
         return None
 
-    system_rules = _build_system_rules()
+    system_rules = _build_system_rules(target_chars=target_chars)
     user_content = _build_user_content(turns, prior_summary)
 
     try:

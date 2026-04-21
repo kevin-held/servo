@@ -231,7 +231,7 @@ class LogPanel(QWidget):
         self.console.setStyleSheet("""
             QPlainTextEdit {
                 background: #0d0d0d;
-                color: #888;
+                color: #aaa;
                 border: 1px solid #1e1e1e;
                 border-radius: 4px;
                 padding: 6px;
@@ -492,13 +492,11 @@ class LogPanel(QWidget):
             dlg.exec()
 
     def _on_clear_log(self):
-        """Truncate the log file, clear the console, buffer, and analytics."""
+        """Truncate the log file via the logger singleton, then clear the UI."""
         try:
-            # Truncate the active log file
-            if _LOG_FILE.exists():
-                with open(_LOG_FILE, "w", encoding="utf-8") as f:
-                    f.truncate(0)
-                self._last_file_size = 0
+            from core.sentinel_logger import get_logger
+            get_logger().clear()
+            self._last_file_size = 0
         except Exception:
             pass
 

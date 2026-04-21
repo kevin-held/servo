@@ -8,23 +8,22 @@ Operations:
 
 import json
 from pathlib import Path
+from core.identity import get_system_defaults
 
 TOOL_NAME        = "system_config"
 TOOL_DESCRIPTION = (
     "Inspect or adjust the agent's own runtime configuration. "
     "Use 'get' to see current settings (temperature, max_tokens, conversation_history, "
-    "chain_limit, autonomous_loop_limit, max_auto_continues, verbosity). "
-    "Use 'set' to change a parameter at runtime — useful when responses are being truncated "
-    "(increase max_tokens or max_auto_continues), when hardware is under pressure "
-    "(decrease conversation_history), or when continuous-mode runs should auto-pause "
-    "after N cycles (set autonomous_loop_limit > 0)."
+    "chain_limit, autonomous_loop_limit, max_auto_continues, verbosity, and summarization toggles). "
+    "Use 'set' to change a parameter at runtime. "
+    "Use 'set_bound' to adjust the safety limits (min_value, max_value) for a numeric parameter."
 )
 TOOL_ENABLED     = True
 TOOL_SCHEMA      = {
     "operation": {
         "type": "string",
-        "enum": ["get", "set"],
-        "description": "Either 'get' (read current config) or 'set' (change a value).",
+        "enum": ["get", "set", "set_bound", "save", "load"],
+        "description": "Operation to perform. 'save' and 'load' require a filename in the 'value' parameter.",
     },
     "parameter": {
         "type": "string",
@@ -36,51 +35,95 @@ TOOL_SCHEMA      = {
             "autonomous_loop_limit",
             "max_auto_continues",
             "verbosity",
+            "stream_enabled",
+            "summarize_contextualize",
+            "summarize_history_integrate",
+            "summarize_tool_results",
+            "history_compression_trigger",
+            "history_compression_target_chars",
+            "tool_result_compression_threshold",
+            "tool_result_compression_target_chars",
+            "hardware_throttling_enabled",
+            "hardware_throttle_threshold_enter",
+            "hardware_throttle_threshold_exit",
         ],
-        "description": "(For 'set') The parameter name to modify.",
+        "description": "The parameter name to inspect or modify (ignored for 'save'/'load').",
     },
     "value": {
         "type": "string",
-        "description": "(For 'set') The new value. Numbers should be passed as strings (e.g., '4096').",
+        "description": "For 'set': the new value. For 'save'/'load': the filename (e.g. 'my_preset.json').",
+    },
+    "min_value": {
+        "type": "string",
+        "description": "(For 'set_bound') The new minimum safety limit.",
+    },
+    "max_value": {
+        "type": "string",
+        "description": "(For 'set_bound') The new maximum safety limit.",
     },
 }
 
-# Safe bounds to prevent the model from setting dangerous values
-_BOUNDS = {
-    "temperature":             (0.0, 1.5),
-    "max_tokens":              (256, 16384),
-    "conversation_history":    (3, 30),
-    "chain_limit":             (1, 20),
-    "autonomous_loop_limit":   (0, 50),   # 0 = unbounded continuous mode
-    "max_auto_continues":      (0, 5),
-}
+
+# Default safety bounds — loaded from system_defaults.json at runtime
+def _get_default_bounds():
+    return get_system_defaults().get("bounds", {
+        "temperature":                         (0.0, 1.5),
+        "max_tokens":                          (256, 16384),
+        "conversation_history":                (3, 40),
+        "chain_limit":                         (1, 20),
+        "autonomous_loop_limit":               (0, 1000),
+        "max_auto_continues":                  (0, 1000),
+        "history_compression_trigger":         (1.0, 10.0),
+        "history_compression_target_chars":    (100, 5000),
+        "tool_result_compression_threshold":    (0, 50000),
+        "tool_result_compression_target_chars": (50, 5000),
+        "hardware_throttle_threshold_enter":    (50.0, 99.0),
+        "hardware_throttle_threshold_exit":     (50.0, 99.0),
+    })
 
 _VERBOSITY_OPTIONS = {"Concise", "Normal", "Standard", "Detailed"}
 
 
 def _get_loop_ref():
-    """
-    Resolve a reference to the running CoreLoop instance.
-    The loop is started as a QThread from MainWindow, so we access it
-    through the Qt application's widget tree.
-    """
+    """Resolve a reference to the running CoreLoop instance."""
     try:
         from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
-        if app is None:
-            return None
+        if app is None: return None
         for widget in app.topLevelWidgets():
-            if hasattr(widget, "loop"):
-                return widget.loop
-    except Exception:
-        pass
+            if hasattr(widget, "loop"): return widget.loop
+    except Exception: pass
     return None
 
 
-def execute(operation: str = "get", parameter: str = "", value: str = "") -> str:
+def _get_bounds(loop, parameter: str) -> tuple[float, float]:
+    """Load dynamic bounds from state, falling back to defaults."""
+    default_min, default_max = _get_default_bounds().get(parameter, (None, None))
+    if default_min is None: return None, None
+    s_min = loop.state.get(f"bound_min_{parameter}", str(default_min))
+    s_max = loop.state.get(f"bound_max_{parameter}", str(default_max))
+    try:
+        return float(s_min), float(s_max)
+    except (ValueError, TypeError):
+        return default_min, default_max
+
+
+def _set_parameter(loop, parameter: str, value: str) -> str:
+    """Delegates parameter management to the core Registry (v1.0.0)."""
+    if not hasattr(loop, "config"):
+        return f"Error: CoreLoop does not have a config registry."
+    
+    return loop.config.set(parameter, value, loop_ref=loop)
+
+
+def execute(operation: str = "get", parameter: str = "", value: str = "", 
+            min_value: str = "", max_value: str = "") -> str:
     loop = _get_loop_ref()
     if loop is None:
         return "Error: Could not access the running CoreLoop instance."
+
+    operation = operation.lower().strip()
+    parameter = parameter.lower().strip()
 
     if operation == "get":
         config = {
@@ -92,92 +135,81 @@ def execute(operation: str = "get", parameter: str = "", value: str = "") -> str
             "autonomous_loop_limit": loop.autonomous_loop_limit,
             "max_auto_continues":    loop.max_auto_continues,
             "verbosity":             loop.verbosity,
-            "continuous_mode":       loop.continuous_mode,
             "stream_enabled":        loop.stream_enabled,
+            "summarize_contextualize":            loop.state.get("summarize_contextualize", "True"),
+            "summarize_history_integrate":        loop.state.get("summarize_history_integrate", "True"),
+            "summarize_tool_results":             loop.state.get("summarize_tool_results", "True"),
+            "history_compression_trigger":        loop.state.get("history_compression_trigger", "2"),
+            "history_compression_target_chars":   loop.state.get("history_compression_target_chars", "800"),
+            "tool_result_compression_threshold":   loop.state.get("tool_result_compression_threshold", "4000"),
+            "tool_result_compression_target_chars":  loop.state.get("tool_result_compression_target_chars", "500"),
+            "hardware_throttling_enabled":        loop.hardware_throttling_enabled,
+            "hardware_throttle_threshold_enter":  loop.hardware_throttle_threshold_enter,
+            "hardware_throttle_threshold_exit":   loop.hardware_throttle_threshold_exit,
         }
+        if parameter: # allow getting single key
+            return json.dumps({parameter: config.get(parameter)}, indent=2)
+        config["_safety_bounds"] = {k: _get_bounds(loop, k) for k in _get_default_bounds()}
         return json.dumps(config, indent=2)
 
     elif operation == "set":
-        if not parameter:
-            return "Error: 'parameter' is required for 'set' operation."
-        if not value:
-            return "Error: 'value' is required for 'set' operation."
+        return _set_parameter(loop, parameter, value)
 
-        parameter = parameter.lower().strip()
+    elif operation == "set_bound":
+        if not parameter: return "Error: 'parameter' is required."
+        if parameter not in _get_default_bounds(): return "Error: Bounds not supported for this parameter."
+        status = []
+        if min_value:
+            loop.state.set(f"bound_min_{parameter}", min_value)
+            status.append(f"min={min_value}")
+        if max_value:
+            loop.state.set(f"bound_max_{parameter}", max_value)
+            status.append(f"max={max_value}")
+        loop.config_changed.emit(f"bound_{parameter}", _get_bounds(loop, parameter))
+        return f"✓ safety bounds for '{parameter}' updated: " + ", ".join(status)
 
+    elif operation == "save":
+        if not value: return "Error: Filename required in 'value' parameter."
+        if "/" in value or "\\" in value: return "Error: Filename only, no paths allowed."
+        if not value.endswith(".json"): value += ".json"
+        
+        # Build config object (reuse get logic)
+        config_raw = execute(operation="get")
+        config = json.loads(config_raw)
+        if "_safety_bounds" in config: del config["_safety_bounds"]
+        
         try:
-            if parameter == "temperature":
-                new_val = float(value)
-                lo, hi = _BOUNDS["temperature"]
-                if not (lo <= new_val <= hi):
-                    return f"Error: temperature must be between {lo} and {hi}. Got {new_val}."
-                loop.ollama.temperature = new_val
-                loop.config_changed.emit("temperature", new_val)
-                return f"✓ temperature set to {new_val}"
+            config_dir = Path("configs")
+            config_dir.mkdir(exist_ok=True)
+            with open(config_dir / value, "w", encoding="utf-8") as f:
+                json.dump(config, f, indent=2)
+            return f"✓ Configuration saved to configs/{value}"
+        except Exception as e:
+            return f"Error saving config: {e}"
 
-            elif parameter == "max_tokens":
-                new_val = int(value)
-                lo, hi = _BOUNDS["max_tokens"]
-                if not (lo <= new_val <= hi):
-                    return f"Error: max_tokens must be between {lo} and {hi}. Got {new_val}."
-                loop.ollama.num_predict = new_val
-                loop.config_changed.emit("max_tokens", new_val)
-                return f"✓ max_tokens set to {new_val}"
+    elif operation == "load":
+        if not value: return "Error: Filename required in 'value' parameter."
+        if not value.endswith(".json"): value += ".json"
+        path = Path("configs") / value
+        if not path.exists(): return f"Error: Config file '{path}' not found."
+        
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            results = []
+            for k, v in data.items():
+                if k == "model":
+                    loop.ollama.model = str(v)
+                    # We don't have a direct loop signal for model change yet, 
+                    # main_window handles it but loop doesn't emit it.
+                    results.append(f"model={v}")
+                    continue
+                res = _set_parameter(loop, k, str(v))
+                results.append(res)
+            
+            return f"✓ Configuration loaded from {value}:\n" + "\n".join(results)
+        except Exception as e:
+            return f"Error loading config: {e}"
 
-            elif parameter == "conversation_history":
-                new_val = int(value)
-                lo, hi = _BOUNDS["conversation_history"]
-                if not (lo <= new_val <= hi):
-                    return f"Error: conversation_history must be between {lo} and {hi}. Got {new_val}."
-                loop.conversation_history = new_val
-                loop.config_changed.emit("conversation_history", new_val)
-                return f"✓ conversation_history set to {new_val}"
-
-            elif parameter == "chain_limit":
-                new_val = int(value)
-                lo, hi = _BOUNDS["chain_limit"]
-                if not (lo <= new_val <= hi):
-                    return f"Error: chain_limit must be between {lo} and {hi}. Got {new_val}."
-                loop.chain_limit = new_val
-                loop.config_changed.emit("chain_limit", new_val)
-                return f"✓ chain_limit set to {new_val}"
-
-            elif parameter == "autonomous_loop_limit":
-                new_val = int(value)
-                lo, hi = _BOUNDS["autonomous_loop_limit"]
-                if not (lo <= new_val <= hi):
-                    return f"Error: autonomous_loop_limit must be between {lo} and {hi}. Got {new_val}."
-                loop.autonomous_loop_limit = new_val
-                loop.config_changed.emit("autonomous_loop_limit", new_val)
-                if new_val == 0:
-                    return "✓ autonomous_loop_limit set to 0 (unbounded continuous mode)"
-                return f"✓ autonomous_loop_limit set to {new_val} cycles before pause"
-
-            elif parameter == "max_auto_continues":
-                new_val = int(value)
-                lo, hi = _BOUNDS["max_auto_continues"]
-                if not (lo <= new_val <= hi):
-                    return f"Error: max_auto_continues must be between {lo} and {hi}. Got {new_val}."
-                loop.max_auto_continues = new_val
-                loop.config_changed.emit("max_auto_continues", new_val)
-                return f"✓ max_auto_continues set to {new_val}"
-
-            elif parameter == "verbosity":
-                if value not in _VERBOSITY_OPTIONS:
-                    return f"Error: verbosity must be one of {_VERBOSITY_OPTIONS}. Got '{value}'."
-                loop.verbosity = value
-                loop.config_changed.emit("verbosity", value)
-                return f"✓ verbosity set to '{value}'"
-
-            else:
-                return (
-                    f"Error: Unknown parameter '{parameter}'. "
-                    "Valid: temperature, max_tokens, conversation_history, chain_limit, "
-                    "autonomous_loop_limit, max_auto_continues, verbosity."
-                )
-
-        except (ValueError, TypeError) as e:
-            return f"Error: Invalid value '{value}' for {parameter}: {e}"
-
-    else:
-        return f"Error: Unknown operation '{operation}'. Use 'get' or 'set'."
+    return "Error: Unknown operation. Use 'get', 'set', 'set_bound', 'save', or 'load'."
