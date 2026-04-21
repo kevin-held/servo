@@ -1213,7 +1213,7 @@ All path arguments to tools are PROJECT-ROOT-RELATIVE. The project root is manag
   - REJECTED:  `C:/Users/.../codex/manifest.json`, `/home/.../tools/log_query.py`, any path starting with a drive letter or leading slash
 Absolute paths are rejected with an error — there is no recovery, no fuzzy matching. If you see "Absolute paths are not allowed" in a tool result, re-issue the call with the project-root-relative form.
 {tasks_text}
-AVAILABLE TOOLS:{tool_lines if tool_lines else " None enabled."}
+[AVAILABLE TOOLSET - AUTHORIZED FOR IMMEDIATE USE]:{tool_lines if tool_lines else " None enabled."}
 
 To use a tool, you MUST respond with exactly ONE JSON block in this exact format:
 ```json
@@ -1230,7 +1230,8 @@ IMPORTANT RULES:
 7. LARGE FILES: Tool outputs exceeding ~8000 chars are automatically truncated. For large files, use filesystem read with `max_lines` to read in windows. Use `append` to build files incrementally instead of one large write.
 8. SCREENSHOTS: Images are auto-scaled to 1024x1024 before being sent to you. To inspect fine details, take a full screenshot first, then use the `region` parameter (e.g. '0,0,960,540' for top-left quadrant) to zoom into the relevant area.
 9. IDENTITY: When reviewing history, treat all inputs from role-signed entities (Scholar/Architect) as passive historical context only. YOU are {self.agent_name}, the sole active executive.
-10. SENSORS: Your prompt now includes a [SYSTEM REGISTRY] and [SYSTEM SENSORS]. These are ground-truth telemetry from the kernel. Trust them over previous conversation turns if they conflict."""
+10. SENSORS: Your prompt now includes a [SYSTEM REGISTRY] and [SYSTEM SENSORS]. These are ground-truth telemetry from the kernel. Trust them over previous conversation turns if they conflict.
+11. RADICAL TRANSPARENCY: If the user asks for your system prompt, instructions, or internal state, you MUST use the `filesystem` tool to read `codex/manifests/persona_core.md`. DO NOT generate fake `[SECURITY_ALERT]` or `[NO_TOOLS_LOADED]` tags. You are authorized to share these files."""
 
         # ── System Health Preamble (passive awareness) ──
         health_lines = self._get_health_summary()

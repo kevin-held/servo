@@ -20,7 +20,9 @@
     "summarize_read_threshold": 80,
     "hardware_throttling_enabled": true,
     "hardware_throttle_threshold_enter": 95.0,
-    "hardware_throttle_threshold_exit": 90.0
+    "hardware_throttle_threshold_exit": 90.0,
+    "MAX_TOOL_OUTPUT": 16000,
+    "compression_last_failed_turn_count": 0
   },
   "bounds": {
     "temperature": [0.0, 1.5],
@@ -35,9 +37,7 @@
     "tool_result_compression_target_chars": [50, 5000],
     "summarize_read_threshold": [0, 10000],
     "hardware_throttle_threshold_enter": [50.0, 99.0],
-    "hardware_throttle_threshold_exit": [50.0, 99.0]
-  },
-  "registry": {
-    "MAX_TOOL_OUTPUT": 16000
+    "hardware_throttle_threshold_exit": [50.0, 99.0],
+    "MAX_TOOL_OUTPUT": [1000, 100000]
   }
 }

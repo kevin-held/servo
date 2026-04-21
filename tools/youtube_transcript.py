@@ -33,7 +33,7 @@ def execute(video: str, language: str = "en", save_to: str = "", max_chars: int 
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError:
-        return "Error: youtube-transcript-api is not installed."
+        return "Error: youtube-transcript-api is not installed. Run 'pip install youtube-transcript-api' to enable this tool."
 
     video_id = _extract_video_id(video)
     if not video_id:
@@ -47,18 +47,18 @@ def execute(video: str, language: str = "en", save_to: str = "", max_chars: int 
             return f"Error: {e}"
 
     try:
+        # v1.2.2: Use instance-based fetch for compatibility with version 1.2.x
         api = YouTubeTranscriptApi()
-        lang_pref = [language] if language else []
-        if "en" not in lang_pref: lang_pref.append("en")
-        fetched = api.fetch(video_id, languages=lang_pref)
-        snippets = list(fetched)
+        snippets = api.fetch(video_id, languages=[language, "en"])
     except Exception as e:
-        return f"Error: {type(e).__name__}: {e}"
+        return f"Error fetching transcript for {video_id}: {type(e).__name__} - {e}"
 
-    if not snippets:
-        return f"Error: No snippets for {video_id}"
+    # v1.2.3: snippets can be dictionaries (v1.2.x API) or mock objects (unit tests)
+    def _extract_text(s):
+        if hasattr(s, "get"): return s.get("text", "")
+        return getattr(s, "text", "")
 
-    full_text = " ".join(getattr(s, "text", "").replace("\n", " ").strip() for s in snippets)
+    full_text = " ".join(_extract_text(s).replace("\n", " ").strip() for s in snippets)
     full_text = re.sub(r"\s+", " ", full_text).strip()
     total_len = len(full_text)
 

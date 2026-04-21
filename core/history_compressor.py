@@ -234,8 +234,12 @@ def maybe_compress(
 
     uncompressed_count = state.count_conversation_turns_since(prior_cutoff)
     try:
-        last_failed_at = int(state.get(_FAILURE_STATE_KEY, "0") or 0)
-    except (TypeError, ValueError):
+        # v1.2.0: Unified resolution via registry if available, else fallback to raw state
+        if hasattr(state, "config"):
+            last_failed_at = state.config.get(_FAILURE_STATE_KEY)
+        else:
+            last_failed_at = int(state.get(_FAILURE_STATE_KEY, "0") or 0)
+    except (TypeError, ValueError, AttributeError):
         last_failed_at = 0
 
     if not _should_compress(

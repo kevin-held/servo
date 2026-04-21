@@ -13,18 +13,29 @@ class StateStore:
     Plus: chroma vector database for episodic memory.
     """
 
-    def __init__(self, db_path: str = "state/state.db", chroma_path: str = "state/chroma"):
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+    # v1.2.1: Restored positional order to preserve backward compatibility for tests
+    def __init__(self, db_path: str = None, chroma_path: str = None, profile: str = None):
+        # Determine paths based on either explicit paths or profile name
+        if profile:
+            self.profile = profile
+            self.db_path = db_path or f"state/state_{profile.lower()}.db"
+            self.chroma_path = chroma_path or f"state/chroma_{profile.lower()}"
+        else:
+            self.profile = "default"
+            self.db_path = db_path or "state/state.db"
+            self.chroma_path = chroma_path or "state/chroma"
+
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL")
         self._init_schema()
 
         # Initialize Vector Database
-        self.chroma_client = chromadb.PersistentClient(path=chroma_path)
+        self.chroma_client = chromadb.PersistentClient(path=self.chroma_path)
         self.memory_collection = self.chroma_client.get_or_create_collection(name="episodic_memory")
 
         # Perform a system backup before returning control to the loop
-        self._backup_state(db_path)
+        self._backup_state(self.db_path)
 
     def _backup_state(self, db_path: str):
         """Silently duplicates the SQLite database to a .bak extension."""

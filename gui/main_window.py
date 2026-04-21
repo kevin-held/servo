@@ -16,9 +16,11 @@ from gui.tool_panel     import ToolPanel
 
 class MainWindow(QMainWindow):
 
-    def __init__(self, run_startup_tests=False, run_deep_diagnostics=False):
+    def __init__(self, run_startup_tests=False, run_deep_diagnostics=False, profile=None):
         super().__init__()
-        self.setWindowTitle("Servo - Cybernetic Actuator")
+        
+        self.profile = profile or "default"
+        self.setWindowTitle(f"Servo - Cybernetic Actuator [Profile: {self.profile}]")
         self.setMinimumSize(1400, 820)
         
         self.run_startup_tests = run_startup_tests
@@ -30,10 +32,13 @@ class MainWindow(QMainWindow):
         self.config_watcher.directoryChanged.connect(lambda: self._populate_profiles())
 
         # Core systems
-        self.state  = StateStore()
+        self.state  = StateStore(profile=profile)
         self.ollama = OllamaClient()
-        self.tools  = ToolRegistry()
+        self.tools  = ToolRegistry(config=None) # Will be injected in loop
         self.loop   = CoreLoop(self.state, self.ollama, self.tools)
+        
+        # Inject the loop's central config registry into the tools
+        self.tools.config = self.loop.config
 
         self._build_ui()
         self._connect_signals()
@@ -92,6 +97,14 @@ class MainWindow(QMainWindow):
         self._populate_models()
         self.model_combo.currentTextChanged.connect(self._on_model_changed)
         sb.addPermanentWidget(self.model_combo)
+
+        # Active Profile Indicator
+        sb.addPermanentWidget(QLabel("  Profile:"))
+        self.profile_indicator = QLabel(self.profile)
+        # Cyan for custom, Dim Gray for default
+        p_color = "#00E5FF" if self.profile != "default" else "#666"
+        self.profile_indicator.setStyleSheet(f"color: {p_color}; font-weight: bold;")
+        sb.addPermanentWidget(self.profile_indicator)
 
         # Context Depth Meter (Altitude Sensor)
         sb.addPermanentWidget(QLabel("  Context Altitude:"))
@@ -255,7 +268,7 @@ class MainWindow(QMainWindow):
                 self.status_label.setText("Running startup diagnostics...")
                 
                 # Make sure the user can see what's happening
-                self.chat_panel.append_message("System", "Running hardware diagnostics. Please wait...")
+                self.chat_panel.append_message("System", f"Running hardware diagnostics on profile '{self.profile}'. Please wait...")
                 
                 self._startup_worker = StartupWorker(
                     run_fast=True, 

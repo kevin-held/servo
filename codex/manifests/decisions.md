@@ -444,5 +444,38 @@ The `CoreLoop` was modified to fetch these values live from `self.state` at the 
 **Decision:** Enforce the use of `tempfile.TemporaryDirectory` for all tests involving the `ConfigRegistry` or `CoreLoop` lifecycle. Tests must mock the filesystem or use isolated scratch paths, passing these directly to constructors rather than relying on global `os.getcwd()`.
 **Consequences:** 100% safety during diagnostic runs. Project infrastructure is protected from testing-induced side effects.
 
+
+### D-20260421-11 — State Profile Isolation for Multi-Environment Safety
+**Date:** 2026-04-21
+**Status:** Accepted
+**Context:** Users require the ability to experience a "Clean Slate" environment for testing or specialized role-play without losing or corrupting their long-running development-time data (ChromaDB memories, task history). Previously, the state path was hardcoded to `state/state.db`.
+**Decision:** Implement a Profile-based State routing system.
+1.  **CLI Entry**: Add `--profile <name>` to `main.py`.
+2.  **Path Routing**: The `StateStore` dynamically constructs `state/state_<name>.db` and `state/chroma_<name>/` if a profile is provided.
+3.  **Default Behavior**: If no profile is provided, it resumes the standard `state.db` (Default Profile).
+4.  **UI Feedback**: The MainWindow must display the active profile in the window title to prevent operator confusion.
+**Consequences:** Absolute safety for long-running data. Users can spin up and tear down temporary environments at will.
+
+
+### D-20260421-12 — Internet Authority & Tool-Usage Refusal Suppression
+**Date:** 2026-04-21
+**Status:** Accepted
+**Context:** The agent was observed reverting to standard LLM "I cannot access the internet" refusals when attempting to use specialized tools like `youtube_transcript`. This creates friction and contradicts the project's goal of an autonomous executive layer.
+**Decision:** Codify "Internet Authority" into the Persona Core.
+1.  **Directive**: Explicitly authorize the usage of `web_search`, `fetch_url`, and `youtube_transcript`.
+2.  **Instruction**: Instruct the model to rely on tool availability rather than "core parameters" or "AI safety" logic when deciding if a request can be fulfilled.
+**Consequences:** Reduced persona hallucination and more reliable tool invocation. The agent acts on its environment with authority.
+
+
+### D-20260421-13 — Radical Transparency & Tool Visibility Hardening
+**Date:** 2026-04-21
+**Status:** Accepted
+**Context:** Observed "Security Alert" refusals when requesting the system prompt and hallucinated "Tool Dependency" failures. These are standard fine-tuned LLM behaviors that conflict with the goal of a transparent, executive tool.
+**Decision:** Implement hard structural overrides in the prompt and persona.
+1.  **Directive**: Add "Radical Transparency" and "Tool Authority" to `persona_core.md`.
+2.  **Structural Anchor**: Rename the tool list header to `[AVAILABLE TOOLSET - AUTHORIZED FOR IMMEDIATE USE]` to catch the model's attention.
+3.  **Mandatory Override**: Add Rule 11 to the system prompt's final instruction set, explicitly forbidding prompt-access refusals and "Administrator" boilerplate.
+**Consequences:** Improved alignment, reduced friction, and guaranteed operator access to internal system state.
+
 ---
 *Append-only. To supersede an entry, add a new one and update the old entry's Status line.*

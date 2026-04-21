@@ -78,8 +78,11 @@ class TestToolRegistry(unittest.TestCase):
         path.write_text("TOOL_NAME='big_tool'\ndef execute(**kwargs): return 'X' * 20000", encoding="utf-8")
         
         self.registry.load_all()
-        # Set a small MAX_TOOL_OUTPUT for testing
-        self.registry.MAX_TOOL_OUTPUT = 100
+        # v1.2.1: Inject a mock config to test truncation via the new registry-first protocol
+        mock_config = MagicMock()
+        mock_config.get.return_value = 100
+        self.registry.config = mock_config
+        
         resp = self.registry.execute("big_tool", {})
         self.assertEqual(len(resp), 100 + len("\n\n[OUTPUT TRUNCATED — 20000 total chars, showing first 100. Use 'filesystem' read with a specific path for full content.]"))
         self.assertIn("OUTPUT TRUNCATED", resp)

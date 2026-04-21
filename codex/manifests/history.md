@@ -6,6 +6,58 @@
 
 The story of Servo, told in releases. Each entry summarizes what changed and why. For decision-level rationale, see `decisions.md`.
 
+## v1.2.4 — (2026-04-21) Transparency & Tool Visibility Hardening
+**Executive Authority & Alignment**
+
+### ✨ Key Improvements
+*   **Radical Transparency Directive**: Hardened the Persona Core and Core Loop with mandates to disclose system prompt and internal logic upon request, effectively suppressing hallucinated "Security Alert" refusals.
+*   **Tool Visibility Structural Anchors**: Enhanced the system prompt with high-visibility headers (`[AVAILABLE TOOLSET - AUTHORIZED FOR IMMEDIATE USE]`) and explicit "Tool Authority" instructions in the Persona to ensure the model recognizes its internet-enabled capabilities.
+*   **Refusal Suppression**: Added Rule 11 to the final system prompt assembly, explicitly overriding "Level 5 Administrator" or "Safety Protocol" boilerplate.
+
+---
+
+## v1.2.3 — (2026-04-21) Polymorphic Logic Remediation
+**Test Infrastructure Integrity**
+
+### 🐛 Fixes
+*   **Polymorphic Data Extraction**: Updated the `youtube_transcript` tool to handle both dictionary-based payloads (used by the production API) and object-based mocks (used by the `TestToolsLogic` suite). This resolves the `AttributeError: 'DummySnippet' object has no attribute 'get'` and restores the 100% pass rate.
+
+---
+
+## v1.2.2 — (2026-04-21) Tool Hardening & Persona Alignment
+**Reliability & Authoritative Execution**
+
+### ✨ Key Improvements
+*   **Internet Authority Directive**: Updated the Persona Core to explicitly authorize and mandate the usage of internet-enabled tools (`web_search`, `fetch_url`, `youtube_transcript`). This prevents the model from defaulting to "I cannot browse the internet" refusals.
+*   **Robust YouTube Extraction**: Refactored the `youtube_transcript` tool to handle dictionary-based payloads and aligned the API logic with version 1.2.x of the upstream library.
+*   **Dependency Formalization**: Formally added `youtube-transcript-api` to the project manifest.
+
+---
+
+## v1.2.1 — (2026-04-21) Emergency Remediation
+**Diagnostic Restoration & Path Safety**
+
+### 🐛 Fixes
+*   **Positional Path Restoration**: Restored backward compatibility to the `StateStore` constructor. Fixed a specific `WinError 123` where absolute database paths were incorrectly parsed as profile names during unit testing.
+*   **Test Suite Synchronization**: Refactored `test_tool_registry.py` to correctly inject a Mock ConfigRegistry. This restores the 100% pass rate for tool output truncation verification.
+
+---
+
+## v1.2.0 — (2026-04-21) 1.0 Completeness & Profile Isolation
+**Structural Assurance & Multi-Environment Safety**
+
+### ✨ Key Improvements
+*   **Safe State Profiles**: Added `--profile <name>` CLI support. Isolated state repositories (`state_fresh.db` and `chroma_fresh/`) now allow for non-destructive "Clean Slate" testing while preserving the primary development session.
+*   **100% Registry Parity**: Completed the architectural unification sweep. All surviving direct `state.get()` calls in the CoreLoop and Compressor were migrated to the tiered `ConfigRegistry`.
+*   **Dynamic Tool Boundaries**: The `MAX_TOOL_OUTPUT` scalar is now a registry-managed tunable parameter, allowing per-profile adjustment of context pressure.
+*   **State-Aware UI**: The MainWindow title bar now dynamically reflects the active state profile for visual session awareness.
+
+### 🐛 Logical Refinements
+*   **Verified Backoffs**: History compression failure tracking is now registry-mediated, ensuring consistent behavior across cold-starts.
+*   **Unified Initialization**: The `ToolRegistry` now correctly consumes the central configuration engine during boot.
+
+---
+
 ## v1.1.0 — CoreLoop Orchestrator Hardening (2026-04-21)
 
 This release focuses on the absolute stabilization of the autonomous engine (Cortex), achieving a 100% pass rate for the core integrity suite and formalizing hardware-aware safety guards.

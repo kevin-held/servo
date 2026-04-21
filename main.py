@@ -11,6 +11,7 @@ def main():
     parser.add_argument("--e2e", action="store_true", help="Launch GUI and run an automated End-to-End visual test")
     parser.add_argument("--startup-tests", action="store_true", help="Launch GUI and immediately run silent startup unit tests")
     parser.add_argument("--deep-diagnostics", action="store_true", help="Forces slow E2E/Eval tasks into the startup test queue")
+    parser.add_argument("--profile", type=str, help="State profile name. Uses state/state_<profile>.db and state/chroma_<profile>/")
     parser.add_argument(
         "--ollama-verbose",
         action="store_true",
@@ -49,7 +50,8 @@ def main():
 
     window = MainWindow(
         run_startup_tests=args.startup_tests,
-        run_deep_diagnostics=args.deep_diagnostics
+        run_deep_diagnostics=args.deep_diagnostics,
+        profile=args.profile
     )
     window.show()
 

@@ -1,6 +1,6 @@
 import importlib.util
 from pathlib import Path
-from core.identity        import get_system_defaults
+from core.config        import ConfigRegistry
 from core.sentinel_logger import get_logger
 
 
@@ -17,10 +17,11 @@ class ToolRegistry:
         execute(**kwargs) -> str
     """
 
-    def __init__(self, tools_dir: str = "tools"):
+    def __init__(self, tools_dir: str = "tools", config: ConfigRegistry = None):
         self.tools_dir = Path(tools_dir)
         self.tools_dir.mkdir(exist_ok=True)
         self._tools: dict = {}
+        self.config = config
         self.load_all()
 
     # ── Loading ───────────────────────────────────
@@ -76,9 +77,10 @@ class ToolRegistry:
 
     # ── Execution ─────────────────────────────────
 
-    # Centralized output cap — prevents any single tool from flooding the model's context window.
-    # ~16000 chars ≈ ~4000 tokens, leaving room for system prompt + conversation history.
-    MAX_TOOL_OUTPUT = get_system_defaults().get("registry", {}).get("MAX_TOOL_OUTPUT", 16000)
+    def _get_max_output(self) -> int:
+        if self.config:
+            return self.config.get("MAX_TOOL_OUTPUT")
+        return 16000
 
     def execute(self, name: str, args: dict) -> str:
         if name not in self._tools:
@@ -90,15 +92,16 @@ class ToolRegistry:
             result = str(tool["module"].execute(**args))
 
             # Cap output to prevent context window overflow
-            if len(result) > self.MAX_TOOL_OUTPUT:
+            max_out = self._get_max_output()
+            if len(result) > max_out:
                 total_len = len(result)
                 result = (
-                    result[:self.MAX_TOOL_OUTPUT]
-                    + f"\n\n[OUTPUT TRUNCATED — {total_len} total chars, showing first {self.MAX_TOOL_OUTPUT}. "
+                    result[:max_out]
+                    + f"\n\n[OUTPUT TRUNCATED — {total_len} total chars, showing first {max_out}. "
                     f"Use 'filesystem' read with a specific path for full content.]"
                 )
                 get_logger().log("WARNING", "tool_registry", f"Output truncated for {name}", {
-                    "tool": name, "total_chars": total_len, "cap": self.MAX_TOOL_OUTPUT,
+                    "tool": name, "total_chars": total_len, "cap": max_out,
                 })
 
             return result
