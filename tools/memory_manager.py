@@ -5,6 +5,7 @@ import sys
 TOOL_NAME        = "memory_manager"
 TOOL_DESCRIPTION = "Manage continuous project logic, rules, or scratchpad notes in your persistent Working Memory. This content lives in your context window constantly."
 TOOL_ENABLED     = True
+TOOL_IS_SYSTEM   = True # Core Memory management
 TOOL_SCHEMA      = {
     "action": {"type": "string", "enum": ["overwrite", "append", "clear"], "description": "Update behavior."},
     "content": {"type": "string", "description": "The logic, summary, or thoughts."}

@@ -519,16 +519,16 @@ The `CoreLoop` was modified to fetch these values live from `self.state` at the 
 **Consequences:** High-ergonomics diagnostic workflow. The operator can now trigger "live audits" without interrupting the agent's thought-stream (Cortex loop). 
 
 
-### D-20260422-03 — Surgical Reading for Context Altitude Control
+### D-20260422-03 — Line-Targeted Reads for Token Management
 **Date:** 2026-04-22
 **Status:** Accepted
 **Context:** Investigating large source files or web pages was previously causing significant "context altitude" spikes. Returning 10k-20k characters of text for a simple logic check frequently pushed the model into its truncation limits or semantic drift.
 **Decision:** Standardized the use of 1-indexed `start_line` and `end_line` parameters across all retrieval tools (`file_read`, `fetch_url`). 
-- **Implementation**: Tools now provide a "Surgical View" by default when ranges are specified.
+- **Implementation**: Tools now provide a "Targeted View" by default when ranges are specified.
 - **Pattern**: The preferred investigative pattern is now `map_project` (to find line numbers) -> `file_read(start_line, end_line)`.
 **Consequences:** Significant reduction in "Schema Tax" and context bloat. The agent maintains 100% precision on line numbers while only processing the necessary logical blocks.
 
-### D-20260422-04 — Perception Auditing via Synchronous Loop Pause
+### D-20260422-04 — State Auditing via Synchronous Execution Pause
 **Date:** 2026-04-22
 **Status:** Accepted
 **Context:** Diagnostic auditing of the agent's internal state (rendered prompts, sensor data) was previously asynchronous or required log-scraping. This made it difficult to verify exactly what the agent "saw" during a specific failure or reasoning turn.
@@ -538,4 +538,24 @@ The `CoreLoop` was modified to fetch these values live from `self.state` at the 
 **Consequences:** Guarantees that the operator and the agent are looking at the exact same semantic reality during an audit. Prevents state-drift between the audit trigger and the inspection window.
 
 ---
-*Append-only. To supersede an entry, add a new one and update the old entry's Status line.*
+ 
+ ### D-20260422-05 — Tool Tiering via Loop-Integrated Metadata (TOOL_IS_SYSTEM)
+ **Date:** 2026-04-22
+ **Status:** Accepted
+ **Context:** The proliferation of tools in the dashboard created visual noise, making it difficult to distinguish between core system utilities (which drive state/ledger) and standalone environment helpers (filesystem/web). This led to friction during executive decision-making.
+ **Decision:** Introduced a `TOOL_IS_SYSTEM` boolean constant in tool modules.
+ - **Registry Integration**: Updated `core/tool_registry.py` to extract this flag during the module-import phase.
+ - **UI Visibility**: Yellow-coded high-priority items in the `ToolPanel` to signal tools requiring core loop hooks or executive state access.
+ **Consequences:** Clearer visual hierarchy. The operator can instantly identify which tools are part of the "Executive Tier" (e.g. `task`, `memory_manager`).
+ 
+ ### D-20260422-06 — Automated Environment Initialization via --chores
+ **Date:** 2026-04-22
+ **Status:** Accepted
+ **Context:** New profiles or sessions after major codebase changes (e.g. v1.3.x reforms) often begin with the agent in a state of structural amnesia. Manual user prompting was required to "bring the agent up to speed" on the current capability map.
+ **Decision:** Implemented a `--chores` CLI flag that triggers an autonomous bootstrapping sequence.
+ - **Mechanism**: The `MainWindow` logic reads [codex/manifests/chores.md](file:///c:/Users/kevin/OneDrive/Desktop/ai/codex/manifests/chores.md) and auto-submits it to the agent loop after diagnostics.
+ - **Handoff Protocol**: The agent is instructed to perform log audits, systematic mapping, and working memory synthesis before declaring readiness.
+ **Consequences:** Reduces onboarding overhead for new profiles. Guarantees that the agent starts every session with a verified and persisted structural overview of the workspace.
+ 
+ ---
+ *Append-only. To supersede an entry, add a new one and update the old entry's Status line.*

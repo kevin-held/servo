@@ -18,7 +18,7 @@ from gui.context_viewer import ContextViewerWindow
 
 class MainWindow(QMainWindow):
 
-    def __init__(self, run_startup_tests=False, run_deep_diagnostics=False, profile=None):
+    def __init__(self, run_startup_tests=False, run_deep_diagnostics=False, run_startup_chores=False, profile=None):
         super().__init__()
         
         self.profile = profile or "default"
@@ -27,6 +27,7 @@ class MainWindow(QMainWindow):
         
         self.run_startup_tests = run_startup_tests
         self.run_deep_diagnostics = run_deep_diagnostics
+        self.run_startup_chores = run_startup_chores
         
         # v1.0.0 (D-20260421-15): Lean Hot-Reloading initialization
         self.config_watcher = QFileSystemWatcher(self)
@@ -126,8 +127,8 @@ class MainWindow(QMainWindow):
         self.profile_indicator.setStyleSheet(f"color: {p_color}; font-weight: bold;")
         sb.addPermanentWidget(self.profile_indicator)
 
-        # Context Depth Meter (Altitude Sensor)
-        sb.addPermanentWidget(QLabel("  Context Altitude:"))
+        # Context Depth Meter
+        sb.addPermanentWidget(QLabel("  Context Depth (Tokens):"))
         self.context_meter = QProgressBar()
         self.context_meter.setFixedWidth(150)
         self.context_meter.setTextVisible(True)
@@ -290,7 +291,10 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Ready")
             self.loop.start()
 
-            if self.run_startup_tests or self.run_deep_diagnostics:
+            # v1.3.4 (D-20260422-05): Startup Chores escalation
+            do_tests = self.run_startup_tests or self.run_deep_diagnostics or self.run_startup_chores
+            
+            if do_tests:
                 from gui.startup_worker import StartupWorker
                 self.status_label.setText("Running startup diagnostics...")
                 
@@ -336,6 +340,32 @@ class MainWindow(QMainWindow):
         self.chat_panel.append_message("System", "Diagnostics complete. Handing over to Servo.")
 
         self.loop.submit_startup_diagnostic(report_text)
+        
+        # v1.3.4 (D-20260422-05): Auto-Initialization Chores
+        if self.run_startup_chores:
+            self._run_chores()
+
+    def _run_chores(self):
+        """Reads chores.md and submits the content to the agent."""
+        import os
+        chores_path = os.path.join(os.getcwd(), "codex", "manifests", "chores.md")
+        if not os.path.exists(chores_path):
+            self.chat_panel.append_message("System", "⚠ [CHORES] chores.md not found. Skipping auto-initialization.")
+            return
+
+        try:
+            with open(chores_path, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                
+            if not content:
+                self.chat_panel.append_message("System", "⚠ [CHORES] chores.md is empty. Skipping.")
+                return
+                
+            self.chat_panel.append_message("System", "🚀 [CHORES] Automated initialization starting...")
+            # We use _on_input to simulate a user turn, ensuring it goes through the proper pipeline
+            self._on_input(content)
+        except Exception as e:
+            self.chat_panel.on_error(f"Failed to run chores: {e}")
 
     # ── Slots ─────────────────────────────────────
 

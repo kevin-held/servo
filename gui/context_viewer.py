@@ -15,7 +15,7 @@ class ContextViewerWindow(QMainWindow):
 
     def __init__(self, history: list, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Surgical Context Viewer")
+        self.setWindowTitle("Context Viewer")
         self.setMinimumSize(1000, 1000)
         
         self.history = history

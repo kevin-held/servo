@@ -86,6 +86,7 @@ TOOL_DESCRIPTION = (
     "yourself. Use `clear` only when abandoning or restarting a plan."
 )
 TOOL_ENABLED     = True
+TOOL_IS_SYSTEM   = True # System Prompt Ledger
 TOOL_SCHEMA      = {
     "action": {
         "type": "string",

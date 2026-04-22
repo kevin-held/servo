@@ -213,10 +213,20 @@ class ToolPanel(QWidget):
 
         item_to_select = None
         for name, tool in self.registry.get_all_tools().items():
-            enabled = tool["enabled"]
-            item    = QListWidgetItem(f"{'●' if enabled else '○'}  {name}")
+            enabled   = tool["enabled"]
+            is_system = tool.get("is_system", False)
+            
+            # Color logic (D-20260421-22): Yellow for System, Green for Standalone
+            if not enabled:
+                color = "#555"
+            elif is_system:
+                color = "#FFD600" # High-visibility Yellow
+            else:
+                color = "#4CAF50" # Standard Green
+            
+            item = QListWidgetItem(f"{'●' if enabled else '○'}  {name}")
             item.setData(Qt.UserRole, name)
-            item.setForeground(QColor("#4CAF50" if enabled else "#555"))
+            item.setForeground(QColor(color))
             
             if name in ("context_dump", "system_config"):
                 item.setToolTip(f"Click to run default {name} call")
@@ -241,7 +251,7 @@ class ToolPanel(QWidget):
             return
         name = item.data(Qt.UserRole)
         
-        # 1. Surgical Quick-Actions
+        # 1. Diagnostic Quick-Actions
         if name == "context_dump":
             # show_user=true, pause_loop=false
             self.tool_execute_requested.emit(name, {"show_user": True, "pause_loop": False})

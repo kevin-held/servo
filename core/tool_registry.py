@@ -46,6 +46,7 @@ class ToolRegistry:
                 "description": getattr(module, "TOOL_DESCRIPTION", "No description"),
                 "schema":      getattr(module, "TOOL_SCHEMA", {}),
                 "enabled":     getattr(module, "TOOL_ENABLED", True),
+                "is_system":   getattr(module, "TOOL_IS_SYSTEM", False),
                 "path":        str(path),
             }
             get_logger().log("DEBUG", "tool_registry", f"Loaded tool: {name}")

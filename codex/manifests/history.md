@@ -316,24 +316,24 @@ Servo started as a continuous-loop agent with a Sentinel/Architect/Analyst/Schol
 
 ---
 
-## v1.3.1 — Surgical Reading & Standardized Pagination (2026-04-22)
-**Precision Investigation & Context Altitude Control**
+## v1.3.1 — Targeted Line Reading & Standardized Pagination (2026-04-22)
+**File Read Precision & Token Limiting**
 
 ### ✨ Key Improvements
-*   **Unified Surgical Access**: Added 1-indexed `start_line` and `end_line` support to `file_read` and `fetch_url`. This allows the agent to target specific logic blocks without character-offset math or context bloat.
+*   **Targeted Read Access**: Added 1-indexed `start_line` and `end_line` support to `file_read` and `fetch_url`. This allows the agent to target specific logic blocks without character-offset math or context bloat.
 *   **Standardized Pagination**: Implemented a unified block-based pagination system across all content-heavy tools (`file_read`, `fetch_url`, `youtube_transcript`).
 *   **Standardized Footers**: Tool results now include clear pagination metadata, e.g., `[Showing lines 100-200 of 1540]`, providing absolute location awareness.
 *   **Efficiency Standards**: Formally codified the **Efficient File Investigative Pattern** in the Engineering Standards, mandating surgical reads for code exploration.
 
 ---
 
-## v1.3.2 — Visual Context Viewer & Loop Flight Control (2026-04-22)
-**Perception Auditing & State Synchronization**
+## v1.3.2 — Context Viewer UI & Thread Synchronization (2026-04-22)
+**State Auditing & Synchronization**
 
 ### ✨ Key Improvements
-*   **The Context Viewer**: Implemented a high-fidelity diagnostic interface (`gui/context_viewer.py`) that mirrors the agent's internal perception window.
-*   **Surgical Telemetry**: The viewer exposes the rendered system prompt, conversation history, task ledger, and working memory exactly as sent to the LLM.
-*   **Loop Flight Control**: Integrated `wait_if_paused` logic into `CoreLoop`. The `context_dump` tool now acts as a "Pause" trigger, allowing synchronous auditing of mid-thought state.
+*   **The Context Viewer**: Implemented a diagnostic interface (`gui/context_viewer.py`) that mirrors the agent's internal perception window.
+*   **Prompt State Logging**: The viewer exposes the rendered system prompt, conversation history, task ledger, and working memory exactly as sent to the LLM.
+*   **Synchronous Thread Pause**: Integrated `wait_if_paused` logic into `CoreLoop`. The `context_dump` tool now acts as a "Pause" trigger, allowing synchronous auditing of mid-thought state.
 *   **Safe Resumption**: Closing the viewer or clicking the prominent "RESUME" button unblocks the execution thread safely.
 
 ---
@@ -341,12 +341,12 @@ Servo started as a continuous-loop agent with a Sentinel/Architect/Analyst/Schol
 
 ---
 
-## v1.3.3 — Tactical GUI Refinement & UI Polish (2026-04-22)
-**Surgical Ergonomics & Space Efficiency**
+## v1.3.3 — GUI Component Modularization & UI Polish (2026-04-22)
+**Layout Refinement & Space Efficiency**
 
 ### ✨ Key Improvements
 *   **Collapsible Tool Panel**: Implemented a "fold/unfold" mechanism (>> / «) for the main Tool Panel to maximize chat workspace.
-*   **Dynamic Space-Filling Layout**: Refactored the `ContextViewer` and `ToolPanel` to use shared `CollapsibleSection` components. These use dynamic stretch factors to greedily consume 100% of available vertical space.
+*   **Dynamic Stretch Application**: Refactored the `ContextViewer` and `ToolPanel` to use shared `CollapsibleSection` components. These use dynamic stretch factors to greedily consume 100% of available vertical space.
 *   **Internal List Collapsibility**: Added a collapsible header to the "INSTALLED TOOLS" list in the Tool Panel, providing deeper decluttering options.
 *   **One-Click Diagnostics**: Standardized interactive triggers for `context_dump` and `system_config` in the tools list for instant auditing.
 *   **Non-Pausing State Auditing**: Updated `context_dump` with `pause_loop=False` support, enabling live background snapshots without interrupting the agent's reasoning.
@@ -359,4 +359,16 @@ Servo started as a continuous-loop agent with a Sentinel/Architect/Analyst/Schol
 *   **Layout Hardening**: Set `Expanding` size policies on all collapsible text editors to prevent static whitespace gaps in the dashboard.
 
 ---
-*Append a new section per release. Do not rewrite history.*
+ 
+ ## v1.3.4 — Tool Registry Classification & Initialization Commands (2026-04-22)
+ **Core State Visibility & Automated Initialization**
+ 
+ ### ✨ Key Improvements
+ *   **Tool Classification**: Implemented a visual and metadata-level distinction between **System Tools** (Yellow) and **Standalone Tools** (Green).
+ *   **System Tool Visibility**: Yellow highlights in the GUI now clearly demarcate tools that require core hooks or drive the loop (e.g., `context_dump`, `task`, `summarizer`).
+ *   **Startup Chores**: Introduced the `--chores` CLI flag. This enables automated initialization procedures from a user-customizable `chores.md` file.
+ *   **Automated Initialization**: Chores allow the agent to map the project, persist findings to the workspace, and audit "mission residue" (logs/tasks) automatically upon boot.
+ *   **Fresh State Synchronization**: Mandated a working memory synthesis during chores to ensure total alignment between the model, the user, and the current source code state.
+ 
+ ---
+ *Append a new section per release. Do not rewrite history.*

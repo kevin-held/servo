@@ -19,6 +19,11 @@ def main():
              "Output bypasses the Sentinel log and the agent's context — "
              "it is visible only in the terminal that launched main.py.",
     )
+    parser.add_argument(
+        "--chores",
+        action="store_true",
+        help="Run startup tests followed by automated initialization chores."
+    )
     args = parser.parse_args()
 
     # Set the env var BEFORE importing anything that constructs an OllamaClient,
@@ -51,6 +56,7 @@ def main():
     window = MainWindow(
         run_startup_tests=args.startup_tests,
         run_deep_diagnostics=args.deep_diagnostics,
+        run_startup_chores=args.chores,
         profile=args.profile
     )
     window.show()

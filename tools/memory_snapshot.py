@@ -12,6 +12,7 @@ TOOL_DESCRIPTION = (
     "so it can be compared ('diffed') against future states to track evolution."
 )
 TOOL_ENABLED     = True
+TOOL_IS_SYSTEM   = True # Core State diagnostic
 TOOL_SCHEMA      = {
     "label": {
         "type": "string",

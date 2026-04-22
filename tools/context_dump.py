@@ -13,6 +13,7 @@ TOOL_DESCRIPTION = (
     "Use this to get a complete snapshot of the current state before making decisions."
 )
 TOOL_ENABLED     = True
+TOOL_IS_SYSTEM   = True # Integrated with Loop/GUI hooks
 TOOL_SCHEMA      = {
     "show_user": {"type": "boolean", "description": "(Optional) If true, create a large pop-out GUI window with collapsible bars showing the full context window. Default false."},
     "pause_loop": {"type": "boolean", "description": "(Optional) If true (default), pauses the core loop when showing the viewer. Set to false for live auditing."}

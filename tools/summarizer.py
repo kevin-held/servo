@@ -51,6 +51,7 @@ What the kernel does NOT own:
 TOOL_NAME        = "summarizer"
 TOOL_DESCRIPTION = "Condense arbitrary text using the model's summarization capability. Useful for distilling logs, long files, or thought transcripts."
 TOOL_ENABLED     = True
+TOOL_IS_SYSTEM   = True # Core Integration Component
 TOOL_SCHEMA      = {
     "content": {"type": "string", "description": "The text to summarize."},
     "rules":   {"type": "string", "description": "(Optional) Specific instructions for the summary (e.g. 'bullet points only'). Default is a general descriptive summary."},

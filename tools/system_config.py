@@ -19,6 +19,7 @@ TOOL_DESCRIPTION = (
     "Use 'set_bound' to adjust the safety limits (min_value, max_value) for a numeric parameter."
 )
 TOOL_ENABLED     = True
+TOOL_IS_SYSTEM   = True # Core State management
 TOOL_SCHEMA      = {
     "operation": {
         "type": "string",
