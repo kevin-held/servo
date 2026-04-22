@@ -26,12 +26,14 @@ This is the vocabulary Servo uses when talking about itself. It is narrower and 
 
 **OBSERVE** — The sixth and final step of the loop. Not "IDLE." Servo is never idle — it is observing and waiting for the next trigger.
 
+**Low/High Fitness** — Naming philosophy. High fitness = shortest possible string that eliminates the need for a comment. Low fitness = requires a comment.
+
 ## Shorthand Conventions
 
 - `role_<key>` — the goal-key naming convention (e.g. `role_sentinel`). Any goal starting with `role_` is treated as a continuous role-goal by `role_manager`.
 - `<model>_notes/` — legacy term for what now lives under `workspace/<model>/`. Prefer "workspace" going forward.
 - "CP-YYYYMMDD-NN" — Change Proposal identifier. Lives in `codex/role_manifests/` or the active notes folder depending on maturity.
-- "the sandbox" — the set of directories Servo is allowed to write to without asking: `workspace/`, `logs/`, `state/`, `gemma4_*_notes/` (legacy). Writing anywhere else requires explicit approval.
+- "the sandbox" — the set of directories Servo is allowed to write to without asking: `workspace/`, `logs/`, `state/`, `codex/manifests/`. Writing anywhere else requires explicit approval.
 
 ## Anti-Patterns (Terms We Do Not Use)
 
@@ -39,6 +41,7 @@ This is the vocabulary Servo uses when talking about itself. It is narrower and 
 - "The AI" — Servo is the name; use it.
 - "Soul" / "consciousness" / "self-awareness" — not what this system is. Avoid even metaphorically.
 - "Master" anything — there is no master role, master registry, or master document. Use "canonical" or "authoritative" instead.
+- "The God-Tool" — A monolithic, multi-purpose tool that mixes discovery, manipulation, and meta-data. Avoid in favor of Atomic Primitives.
 
 ---
 *Maintained by The Scholar*

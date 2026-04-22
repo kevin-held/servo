@@ -9,13 +9,16 @@ from PySide6.QtGui import QColor, QFont, QTextCursor
 
 from core.tool_registry import ToolRegistry
 from gui.log_panel import LogPanel
+from gui.components import CollapsibleSection
 
 
 
 
 class ToolPanel(QWidget):
 
-    tool_changed = Signal()   # emitted when tools are modified / reloaded
+    tool_changed = Signal()             # emitted when tools are modified / reloaded
+    fold_requested = Signal()           # emitted when fold button is clicked
+    tool_execute_requested = Signal(str, dict) # name, args
 
     def __init__(self, registry: ToolRegistry):
         super().__init__()
@@ -54,6 +57,24 @@ class ToolPanel(QWidget):
         reload_btn.clicked.connect(self._reload_all)
         header.addWidget(reload_btn)
 
+        self.fold_btn = QPushButton("»")
+        self.fold_btn.setFixedWidth(28)
+        self.fold_btn.setToolTip("Collapse Tool Panel")
+        self.fold_btn.setStyleSheet("""
+            QPushButton {
+                background: #1e1e1e;
+                color: #00E5FF;
+                border: 1px solid #2a2a2a;
+                border-radius: 4px;
+                padding: 4px 6px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover { background: #252525; border-color: #00E5FF; }
+        """)
+        self.fold_btn.clicked.connect(lambda: self.fold_requested.emit())
+        header.addWidget(self.fold_btn)
+
         layout.addLayout(header)
 
         # Tool list
@@ -72,9 +93,12 @@ class ToolPanel(QWidget):
             QListWidget::item:hover { background: #1e1e1e; }
         """)
         self.tool_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
-        self.tool_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
-        self.tool_list.currentItemChanged.connect(self._on_selected)
-        layout.addWidget(self.tool_list)
+        self.tool_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tool_list.itemClicked.connect(self._on_item_clicked)
+        
+        self.sec_tools = CollapsibleSection("INSTALLED TOOLS", "#888")
+        self.sec_tools.set_widget(self.tool_list)
+        layout.addWidget(self.sec_tools, 1)
 
 
         # Stream container
@@ -193,6 +217,14 @@ class ToolPanel(QWidget):
             item    = QListWidgetItem(f"{'●' if enabled else '○'}  {name}")
             item.setData(Qt.UserRole, name)
             item.setForeground(QColor("#4CAF50" if enabled else "#555"))
+            
+            if name in ("context_dump", "system_config"):
+                item.setToolTip(f"Click to run default {name} call")
+                # Visual cue for interactivity
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            
             self.tool_list.addItem(item)
             if name == current_name:
                 item_to_select = item
@@ -202,6 +234,23 @@ class ToolPanel(QWidget):
             self.tool_list.setCurrentItem(item_to_select)
 
     # ── Slots ─────────────────────────────────────
+
+    @Slot(QListWidgetItem)
+    def _on_item_clicked(self, item):
+        if not item:
+            return
+        name = item.data(Qt.UserRole)
+        
+        # 1. Surgical Quick-Actions
+        if name == "context_dump":
+            # show_user=true, pause_loop=false
+            self.tool_execute_requested.emit(name, {"show_user": True, "pause_loop": False})
+        elif name == "system_config":
+            # default empty args runs a dump
+            self.tool_execute_requested.emit(name, {})
+        
+        # 2. General selection behavior
+        self._on_selected(item, None)
 
     @Slot()
     def _on_selected(self, current, previous):

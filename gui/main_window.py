@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import (
     QMainWindow, QSplitter, QStatusBar,
-    QLabel, QComboBox, QWidget, QProgressBar
+    QLabel, QComboBox, QWidget, QProgressBar,
+    QPushButton
 )
 from PySide6.QtCore import Qt, Slot, QFileSystemWatcher
 import os
@@ -12,6 +13,7 @@ from core.tool_registry import ToolRegistry
 from gui.loop_panel     import LoopPanel
 from gui.chat_panel     import ChatPanel
 from gui.tool_panel     import ToolPanel
+from gui.context_viewer import ContextViewerWindow
 
 
 class MainWindow(QMainWindow):
@@ -21,7 +23,7 @@ class MainWindow(QMainWindow):
         
         self.profile = profile or "default"
         self.setWindowTitle(f"Servo - Cybernetic Actuator [Profile: {self.profile}]")
-        self.setMinimumSize(1400, 820)
+        self.setMinimumSize(1500, 1000)
         
         self.run_startup_tests = run_startup_tests
         self.run_deep_diagnostics = run_deep_diagnostics
@@ -58,10 +60,28 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.loop_panel)
         splitter.addWidget(self.chat_panel)
         splitter.addWidget(self.tool_panel)
-        splitter.setSizes([280, 720, 400])
+        
+        # Restore button (v1.3.3)
+        self.restore_tools_btn = QPushButton("«")
+        self.restore_tools_btn.setFixedWidth(20)
+        self.restore_tools_btn.setToolTip("Restore Tool Panel")
+        self.restore_tools_btn.setStyleSheet("""
+            QPushButton {
+                background: #111; color: #00E5FF; border: 1px solid #2a2a2a; border-right: none;
+                border-top-left-radius: 6px; border-bottom-left-radius: 6px;
+                font-weight: bold; font-size: 14px;
+            }
+            QPushButton:hover { background: #1a1a1a; }
+        """)
+        self.restore_tools_btn.clicked.connect(self._toggle_tool_panel)
+        self.restore_tools_btn.setVisible(False)
+        splitter.addWidget(self.restore_tools_btn)
+
+        splitter.setSizes([280, 720, 400, 0])
         splitter.setCollapsible(0, False)
         splitter.setCollapsible(1, False)
-        splitter.setCollapsible(2, False)
+        splitter.setCollapsible(2, True)
+        splitter.setCollapsible(3, False)
 
         self.setCentralWidget(splitter)
         self.setStyleSheet("QMainWindow { background: #111; }")
@@ -173,6 +193,13 @@ class MainWindow(QMainWindow):
         
         # Telemetry — real-time context and bound data
         self.loop.telemetry_event.connect(self._on_telemetry_event)
+        
+        # Context Viewer (v1.3.2)
+        self.loop.context_view_requested.connect(self._on_context_view_requested)
+        
+        # Tool Panel interactions (v1.3.3)
+        self.tool_panel.fold_requested.connect(self._toggle_tool_panel)
+        self.tool_panel.tool_execute_requested.connect(self._on_tool_execute_requested)
         
         # ── PROFILE SWITCHER ──
         self._populate_profiles()
@@ -508,6 +535,40 @@ class MainWindow(QMainWindow):
                     self.loop_panel.show_thinking_check.setChecked(self.state.get("ui_show_thinking", "True").lower() == "true")
             except Exception as e:
                 print(f"[Config] Error loading payload for {model}: {e}")
+
+    @Slot()
+    def _toggle_tool_panel(self):
+        is_visible = self.tool_panel.isVisible()
+        self.tool_panel.setVisible(not is_visible)
+        self.restore_tools_btn.setVisible(is_visible)
+        
+        # Adjust splitter to reclaim space
+        splitter = self.centralWidget()
+        if is_visible:
+            # Hiding: loop=280, chat=fill, tools=0, restore=20
+            splitter.setSizes([280, 1000, 0, 20])
+        else:
+            # Showing: restore to previous split
+            splitter.setSizes([280, 720, 400, 0])
+
+    @Slot(str, dict)
+    def _on_tool_execute_requested(self, name: str, args: dict):
+        """Formats and submits a tool call as if it were typed by the user."""
+        import json
+        call_json = json.dumps({"tool": name, "args": args})
+        # Inject directly into the chat panel's logic
+        self.chat_panel.input_field.setText(call_json)
+        self.chat_panel._submit()
+
+    @Slot(list)
+    def _on_context_view_requested(self, history: list):
+        viewer = ContextViewerWindow(history, parent=self)
+        # Ensure that resuming logic is tied to both the Resume button and closing the window
+        viewer.resume_btn.clicked.connect(self.loop.resume)
+        viewer.resume_btn.clicked.connect(viewer.close)
+        viewer.closed.connect(self.loop.resume)
+        viewer.setAttribute(Qt.WA_DeleteOnClose)
+        viewer.show()
 
     def closeEvent(self, event):
         self.loop.stop()

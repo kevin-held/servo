@@ -22,7 +22,8 @@
     "hardware_throttle_threshold_enter": 95.0,
     "hardware_throttle_threshold_exit": 90.0,
     "MAX_TOOL_OUTPUT": 16000,
-    "compression_last_failed_turn_count": 0
+    "compression_last_failed_turn_count": 0,
+    "context_viewer_history_limit": 10
   },
   "bounds": {
     "temperature": [0.0, 1.5],

@@ -100,7 +100,7 @@ class ConfigRegistry:
         """Coerces input into the expected type based on the JSON default's type."""
         if value is None: return None
         
-        target_type = self._type_map.get(key, str)
+        target_type = self._type_map.get(key, type(value))
 
         if target_type == bool:
             if isinstance(value, bool): return value

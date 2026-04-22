@@ -3,7 +3,8 @@ import re
 import threading
 import time
 import traceback
-from PySide6.QtCore import QThread, Signal
+import collections
+from PySide6.QtCore import QThread, Signal, Slot
 from core.sentinel_logger import get_logger
 from core.ollama_client import ChatCancelled
 from core.config import ConfigRegistry
@@ -43,6 +44,7 @@ class CoreLoop(QThread):
     config_changed               = Signal(str, object)
     log_event                    = Signal(str, str, str, str)  # level, component, message, context_json
     telemetry_event              = Signal(int, int)            # current_tokens, max_tokens
+    context_view_requested       = Signal(list)                # full history list of snapshots
 
     def __init__(self, state, ollama, tools):
         super().__init__()
@@ -98,6 +100,12 @@ class CoreLoop(QThread):
         self.truncations_total           = 0
         self.auto_continues_total        = 0
         self.auto_continue_give_ups_total = 0
+        
+        self.active_context = {}
+        self._is_paused     = False
+        
+        hist_limit = self.config.get("context_viewer_history_limit", 10)
+        self.context_history = collections.deque(maxlen=hist_limit)
         self.followup_truncations_total  = 0
         self.hardware_throttle_total     = 0
         self.user_interrupts_total       = 0
@@ -158,6 +166,17 @@ class CoreLoop(QThread):
         """Standard shutdown cleanup (D-20260421-14)."""
         self.state.set_session_flag("dirty", "False")
         self._slog("INFO", "core_loop", "Session Sentinel: Cleared (Normal exit)")
+
+    # ── PAUSE / RESUME ── (v1.3.2)
+
+    def wait_if_paused(self):
+        """Block the loop thread if _is_paused is true. Checked at every step."""
+        while self._is_paused:
+            time.sleep(0.1)
+
+    @Slot()
+    def resume(self):
+        self._is_paused = False
 
     # ──────────────────────────────────────────────
     # Main thread
@@ -587,10 +606,33 @@ class CoreLoop(QThread):
     # ──────────────────────────────────────────────
 
     def _reason(self, context: dict, current_loop: int = 0) -> dict:
+        self.wait_if_paused()
         self._set_step(LoopStep.REASON)
 
         system_prompt = self._build_system_prompt(context, current_loop=current_loop)
         messages      = self._build_messages(context)
+
+        # v1.3.2: Cache enriched context for telemetry/viewer
+        self.active_context = context.copy()
+        self.active_context["_rendered_system_prompt"] = system_prompt
+        self.active_context["_rendered_messages"] = messages
+
+        # v1.3.3: Historical Snapshotting (Time-Travel Telemetry)
+        try:
+            from .hardware import get_resource_status
+            hw = get_resource_status()
+        except:
+            hw = {}
+
+        snapshot = {
+            "active_context": self.active_context,
+            "health_payload": {
+                "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "system_health": {"hardware": hw},
+                "working_memory_summary": str(context.get("memory", ""))[:500]
+            }
+        }
+        self.context_history.append(snapshot)
 
         self._trace(LoopStep.REASON, f"Model: {self.ollama.model}")
         self._trace(LoopStep.REASON, f"Messages: {len(messages)} | Tools: {len(context['tools'])}")

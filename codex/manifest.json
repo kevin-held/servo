@@ -1,7 +1,7 @@
 {
   "name": "Servo",
   "lineage": "Cybernetic Actuator",
-  "version": "1.3.0",
+  "version": "1.3.3",
   "description": "An autonomous local-AI executive layer. One persistent process that perceives, reasons, and acts on its own environment through a unified architecture organized into three canonical layers: Cortex (ephemeral runtime), Persona (invariant identity), Codex (on-disk truth).",
   "layers": {
     "cortex":  "The six-step core loop (core/loop.py). Ephemeral runtime; allowed to lose state on restart. Reference implementation, expected to be obsoleted by future models with embedded schedulers.",

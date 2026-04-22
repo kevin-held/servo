@@ -39,7 +39,8 @@ class TestCoreLoopHardened(unittest.TestCase):
                 "defaults": {
                     "conversation_history": 20, "chain_limit": 10, "autonomous_loop_limit": 5,
                     "max_auto_continues": 2, "verbosity": "Normal", "ui_show_thinking": True,
-                    "summarize_read_enabled": True, "summarize_read_threshold": 5
+                    "summarize_read_enabled": True, "summarize_read_threshold": 5,
+                    "context_viewer_history_limit": 10
                 },
                 "bounds": {}
             })

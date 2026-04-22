@@ -10,9 +10,16 @@ Quick definitions of every concept in the Servo codebase. Alphabetical. For Serv
 
 **Auto-continue** — When the LLM hits a token budget mid-response, the Cortex automatically continues generation up to `MAX_AUTO_CONTINUES` times.
 
+**Atomic Primitives** — Sharp, specialized tools (e.g., `file_read`, `file_write`) that replace monolithic "God-Tools" to reduce prompt schema "Tax" and increase model precision.
+
 ## B
 
-**Block Argument** — An optional parameter (e.g., `block=1`) used with compatible tools to retrieve subsequent chunks of data after a 16,000 character truncation.
+**Block Argument**
+*   **An optional parameter (e.g., `block=1`) used with compatible tools (like `file_read`, `fetch_url`, or `youtube_transcript`) to retrieve subsequent chunks of data after a 15,000 character truncation.
+
+**Surgical Reading**
+*   **Implementation:** `file_read` with `start_line` / `end_line`.
+*   **Nuance:** The preferred method for investigating large source files. Avoids "block-blindness" by allowing the agent to target specific logic blocks by line number.
 
 ## C
 
@@ -47,6 +54,14 @@ Quick definitions of every concept in the Servo codebase. Alphabetical. For Serv
 
 **Final Synthesis** — The convergence event that ends a Dream Sequence by summarizing findings into a `final_synthesis.md`.
 
+## H
+
+**High Fitness (Naming)** — A variable or function name that is the shortest possible string while eliminating the need for an explanatory comment.
+
+## L
+
+**Low Fitness (Naming)** — A name that requires a comment to explain its purpose; considered a code quality regression.
+
 
 ## I
 
@@ -63,6 +78,8 @@ Quick definitions of every concept in the Servo codebase. Alphabetical. For Serv
 ## M
 
 **Manifest** — `codex/manifest.json`. The canonical machine-readable description of the system layout, version, and layer mapping.
+
+**map_project** — The symbol-aware discovery tool (extracting classes, methods, and functions via regex) that replaced the monolithic `analyze_directory`.
 
 **Memory manager** — one of your tools.
 
@@ -110,7 +127,7 @@ Quick definitions of every concept in the Servo codebase. Alphabetical. For Serv
 
 **Tool registry** — `core/tool_registry.py`. Auto-discoverer for the `tools/` directory.
 
-**Truncation Awareness** — The engineering standard for handling tool outputs exceeding 16,000 characters (e.g., using `Block Argument`).
+**Truncation Awareness** — The engineering standard for handling large outputs (e.g., using `Block Argument` or `start_line`/`end_line` surgical reads).
 
 ## V
 

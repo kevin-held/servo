@@ -32,7 +32,7 @@ class TestToolsLogic(unittest.TestCase):
         with patch('youtube_transcript_api.YouTubeTranscriptApi', new=DummyTranscriptAPI):
             res0 = youtube_transcript.execute("dummy11char", block=0, max_chars=0)
             self.assertTrue("BLOCK 0 OF 1" in res0)
-            self.assertTrue("Call again with block=1" in res0)
+            self.assertTrue("with block=1 to continue" in res0)
             self.assertTrue(len(res0) > 15000)
 
             res1 = youtube_transcript.execute("dummy11char", block=1, max_chars=0)

@@ -85,9 +85,9 @@ def execute(video: str, language: str = "en", save_to: str = "", max_chars: int 
         display_text = display_text[:max_chars]
         trunc_note = f"\n[truncated to {max_chars} chars]"
 
-    footer = f"\n[BLOCK {block} OF {total_blocks - 1}]"
-    if block < total_blocks - 1:
-        footer += f" (Call again with block={block + 1} to continue)"
+    footer = f"\n\n[BLOCK {block} OF {total_blocks-1} - chars {start_idx}..{min(end_idx, total_len)-1} of {total_len}]"
+    if block + 1 < total_blocks:
+        footer += f"\nCall 'youtube_transcript' with block={block+1} to continue."
 
     return (f"Transcript for video {video_id} ({total_len} chars total, {len(snippets)} snippets):\n\n"
         f"{display_text}{trunc_note}{saved_msg}\n{footer}")

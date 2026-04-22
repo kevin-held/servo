@@ -28,6 +28,20 @@ This document defines the physical implementation of agentic concepts within the
 **Step 6: OBSERVE (Passive Watch)**
 *   **Nuance:** The "rest" state between active cycles. The Cortex monitors for new user input, pending tasks, or external interrupts. It is the steady-state gate that ensures the loop is never truly idle, only waiting.
 
+## 2. Tools & Intelligence
+
+**Atomic Primitives**
+*   **Implementation:** `file_read`, `file_write`, `file_list`, `file_manage`.
+*   **Nuance:** Deployed in v1.3.0 to replace monolithic "God-Tools." Each primitive is a sharp, single-purpose tool that reduces schema "Tax" and improves model precision by forcing explicit selection.
+
+**Symbolic Mapping**
+*   **Implementation:** `map_project`.
+*   **Nuance:** Replaces directory crawling with regex-based symbol extraction. Provides a "Technical Capability Map" (classes, methods, functions) rather than a raw content dump.
+
+**Summarizer Kernel**
+*   **Implementation:** `tools/summarizer.py`.
+*   **Nuance:** Factored out of `log_summarizer` to provide a system-wide condensation engine. Shared by the `history_compressor` and the `ACT` phase to manage context pressure.
+
 ## 2. Memory Implementation
 
 **Episodic Memory**
@@ -60,9 +74,21 @@ This document defines the physical implementation of agentic concepts within the
 *   Any system message marked with `_transient=True`. These are processed by the reasoning engine but are **never saved** to the persistent SQLite history. Used for diagnostics and nudges. consider working memory for tracking useful transient payloads.
 
 **Block Argument**
-*   An optional parameter (e.g., `block=1`) used with compatible tools (like `filesystem read` or `youtube_transcript`) to retrieve subsequent chunks of data after a 16,000 character truncation.
+*   **An optional parameter (e.g., `block=1`) used with compatible tools (like `file_read`, `fetch_url`, or `youtube_transcript`) to retrieve subsequent chunks of data after a 15,000 character truncation.
 
-## 4. Shorthand & Identifiers
+**Surgical Reading**
+*   **Implementation:** `file_read` with `start_line` / `end_line`.
+*   **Nuance:** The preferred method for investigating large source files. Avoids "block-blindness" by allowing the agent to target specific logic blocks by line number. Deployed in v1.3.1 to enhance precision.
+
+## 4. Engineering Philosophy
+
+**High Fitness (Naming)**
+*   **Philosophy:** A variable or function name is "high fitness" if it is the shortest possible string that eliminates the need for an explanatory comment. High fitness is the default state for atomic primitives.
+
+**Low Fitness (Naming)**
+*   **Philosophy:** A name has "low fitness" if it requires a comment to explain what it does. This constitutes a technical debt regression.
+
+## 5. Shorthand & Identifiers
 
 *   **CP-YYYYMMDD-NN**: A Change Proposal identifier. (See [process_cp.md](process_cp.md))
 *   **IP-YYYYMMDD-NN**: An Implementation Plan identifier. (See [process_ip.md](process_ip.md))
@@ -71,8 +97,9 @@ This document defines the physical implementation of agentic concepts within the
 *   **`workspace/<model>/`**: The scratchpad for all model files. Always prefer "workspace."
 *   **`workspace/<model>/dream_pad/`**: The scratchpad for dream sequences 
     **`workspace/<model>/old_stuff/`**: files which may be important but are not currently in use. old code, manifests, etc. do not run scripts in this directory.
-    **`codex/old_stuff/`**: old codex files. avoid just saying "old stuff" without specifying workspace or codex, important files do not belong here.
-## 5. Self-Development Lifecycle (SDL)
+    **`codex/manifests/old_stuff/`**: old codex files. avoid just saying "old stuff" without specifying workspace or codex, important files do not belong here.
+
+## 6. Self-Development Lifecycle (SDL)
 
 The rigid process for all structural system changes. (See [self_development.md](self_development.md))
 

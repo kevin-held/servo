@@ -498,5 +498,44 @@ The `CoreLoop` was modified to fetch these values live from `self.state` at the 
 -   **Test Migration**: Migrated all legacy integration tests from the monolithic `filesystem` and `analyze_directory` providers to the new atomic primitive set (`file_read`, `map_project`).
 **Consequences:** Restoration of system stability and UI clarity. The agent's identity and tool-awareness are secured, and the UI correctly reflects the outcomes of atomic tool chains.
 
+
+### D-20260422-01 — Reusable Collapsible UI Component (CollapsibleSection)
+**Date:** 2026-04-22
+**Status:** Accepted
+**Context:** The Context Viewer and Tool Panel both required collapsible sections which were previously implemented as ad-hoc, inconsistent logic. This led to layout issues where collapsed sections left static gaps, and inconsistent styling for header toggles. Maintenance of the "Dynamic Space Filling" requirement was becoming difficult across multiple files.
+**Decision:** Factored out a shared `CollapsibleSection` component in `gui/components.py`. 
+- **Implementation**: Used a `QVBoxLayout` with dual-mode visibility (header always visible, content wedge toggled).
+- **Expansion Rule**: Applied `QVBoxLayout.setStretchFactor` and `Expanding` size policies to ensure that remaining open sections greedily consume all available vertical space in the parent container.
+- **Contract**: The component accepts a title and an optional pre-configured `QWidget` or `QTextEdit` content payload.
+**Consequences:** Consistent UI behavior across the application. New dashboard sections can be added with zero layout-boilerplate. Tradeoff: The parent container must now manage stretch factors explicitly to achieve the "space-filling" effect; the component cannot infer its siblings' state.
+
+### D-20260422-02 — Non-Pausing Diagnostic Tooling (pause_loop argument)
+**Date:** 2026-04-22
+**Status:** Accepted
+**Context:** The `context_dump` tool previously always paused the loop (`_is_paused = True`). While safe for deep debugging, this created significant friction for live auditing: it forced the operator to manually click "Resume" after every diagnostic snapshot, even when the agent was performing routine background tasks.
+**Decision:** Parameterized `context_dump.execute` with a `pause_loop: bool = True` argument. 
+- **Tool Logic**: If `pause_loop` is passed as `False`, the snapshot is emitted to the UI but the logic skip for `_is_paused` is bypassed.
+- **GUI Integration**: The `MainWindow` and `ToolPanel` interactive triggers were updated to pass `pause_loop=False` for one-click snapshots. Manual user turns (messages) still use the default `True` to allow steady-state auditing.
+**Consequences:** High-ergonomics diagnostic workflow. The operator can now trigger "live audits" without interrupting the agent's thought-stream (Cortex loop). 
+
+
+### D-20260422-03 — Surgical Reading for Context Altitude Control
+**Date:** 2026-04-22
+**Status:** Accepted
+**Context:** Investigating large source files or web pages was previously causing significant "context altitude" spikes. Returning 10k-20k characters of text for a simple logic check frequently pushed the model into its truncation limits or semantic drift.
+**Decision:** Standardized the use of 1-indexed `start_line` and `end_line` parameters across all retrieval tools (`file_read`, `fetch_url`). 
+- **Implementation**: Tools now provide a "Surgical View" by default when ranges are specified.
+- **Pattern**: The preferred investigative pattern is now `map_project` (to find line numbers) -> `file_read(start_line, end_line)`.
+**Consequences:** Significant reduction in "Schema Tax" and context bloat. The agent maintains 100% precision on line numbers while only processing the necessary logical blocks.
+
+### D-20260422-04 — Perception Auditing via Synchronous Loop Pause
+**Date:** 2026-04-22
+**Status:** Accepted
+**Context:** Diagnostic auditing of the agent's internal state (rendered prompts, sensor data) was previously asynchronous or required log-scraping. This made it difficult to verify exactly what the agent "saw" during a specific failure or reasoning turn.
+**Decision:** Implemented a synchronous "Context Viewer" (`gui/context_viewer.py`) that captures a full state snapshot and halts the `CoreLoop` using a thread-safe `wait_if_paused` signal. 
+- **Trigger**: The `context_dump` tool acts as the primary trigger for this mode.
+- **Synchronization**: The loop thread waits until a "Resume" signal is emitted from the GUI.
+**Consequences:** Guarantees that the operator and the agent are looking at the exact same semantic reality during an audit. Prevents state-drift between the audit trigger and the inspection window.
+
 ---
 *Append-only. To supersede an entry, add a new one and update the old entry's Status line.*

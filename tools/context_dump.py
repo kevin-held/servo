@@ -13,7 +13,10 @@ TOOL_DESCRIPTION = (
     "Use this to get a complete snapshot of the current state before making decisions."
 )
 TOOL_ENABLED     = True
-TOOL_SCHEMA      = {}   # No arguments needed — always dumps everything
+TOOL_SCHEMA      = {
+    "show_user": {"type": "boolean", "description": "(Optional) If true, create a large pop-out GUI window with collapsible bars showing the full context window. Default false."},
+    "pause_loop": {"type": "boolean", "description": "(Optional) If true (default), pauses the core loop when showing the viewer. Set to false for live auditing."}
+}
 
 _ROOT = Path(__file__).parent.parent.resolve()
 
@@ -154,12 +157,12 @@ def _get_tool_health() -> dict:
         return {"error": str(e)}
 
 
-def execute() -> str:
+def execute(show_user: bool = False, pause_loop: bool = True) -> str:
     goals_raw = _read_goals()
-
-    # Format goals the same way goal_manager:list does (human-friendly but still JSON-serializable)
-    goals_summary = {}
     now = time.time()
+    
+    # ... (skipping some logic for replacement clarity if possible, but I'll replace the full body for safety)
+    goals_summary = {}
     for name, meta in goals_raw.items():
         entry = {"type": meta.get("type"), "description": meta.get("description")}
         if meta.get("type") == "continuous":
@@ -181,7 +184,7 @@ def execute() -> str:
     hw = _get_hardware_status()
     errors = _get_error_summary()
     tools = _get_tool_health()
-    loop_telemetry = _get_loop_telemetry()
+    telemetry = _get_loop_telemetry()
 
     payload = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -190,16 +193,31 @@ def execute() -> str:
         "goals": goals_summary,
         "working_memory_summary": mem_summary if mem_summary else "(empty)",
         "system_health": {
-            "hardware": {
-                "status": hw.get("status", "Unknown"),
-                "ram_percent": hw.get("ram_percent", -1),
-                "vram_percent": hw.get("vram_percent", -1),
-            },
+            "hardware": hw,
             "errors": errors,
             "tools": tools,
-            "loop_telemetry": loop_telemetry if loop_telemetry else "(unavailable)",
+            "loop_telemetry": telemetry if telemetry else "(unavailable)",
         },
     }
+
+    # v1.3.2: Visual Telemetry Logic
+    if show_user:
+        try:
+            from PySide6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app:
+                loop = None
+                for widget in app.topLevelWidgets():
+                    if hasattr(widget, "loop"):
+                        loop = widget.loop
+                        break
+                if loop:
+                    # v1.3.3: Pass full history list
+                    loop.context_view_requested.emit(list(loop.context_history))
+                    if pause_loop:
+                        loop._is_paused = True
+        except Exception:
+            pass
 
     return json.dumps(payload, indent=2)
 

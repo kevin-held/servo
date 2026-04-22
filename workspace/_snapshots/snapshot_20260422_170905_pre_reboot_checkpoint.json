@@ -1,0 +1,6 @@
+{
+  "snapshot_label": "pre_reboot_checkpoint",
+  "timestamp_utc": "2026-04-22T17:09:05.777208+00:00",
+  "goals": {},
+  "working_memory": "**DEBT & OBSERVATIONS:**\n- `filesystem`: Needs `prepend` for log updates (`history.md`).\n- `analyze_directory`: Replace \"quick/dirty\" with structured tool.\n- `context_dump`: Improve abstraction/docs for readability.\n- `memory_snapshot`: Integrate into lifecycle checkpoints.\n- `shell_exec`: Record successful patterns in `codex`.\n- `system_config`: Frequent use for runtime optimization.\n- Telemetry: Enhance monitoring for performance/operational boundaries.\n- Time Management: Need tool to query elapsed/remaining time.\n- **Semantic Integrity:** Monitor for vocabulary mismismatches between source code and manifests. Specifically, watch for ambiguous naming (e.g., `mark_run` vs `is_run`) where the functional state (past vs. future) is unclear."
+}
