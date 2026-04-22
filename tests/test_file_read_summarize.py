@@ -1,5 +1,5 @@
 """
-Tests for the `summarize` flag on filesystem:read (Phase 3, D-20260419-04).
+Tests for the `summarize` flag on file_read (v1.3.0).
 
 Covers:
   - default False → plain read unchanged (no kernel call)
@@ -10,12 +10,11 @@ Covers:
   - summarize=True + max_lines → body is the truncated slice, footer preserved
   - TOOL_SCHEMA contract: `summarize` key present with boolean type
 
-Run: pytest tests/test_filesystem_summarize.py -v
+Run: pytest tests/test_file_read_summarize.py -v
 """
 
 import sys
 import os
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -24,18 +23,18 @@ _ROOT = Path(__file__).parent.parent.resolve()
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools import filesystem  # noqa: E402
+from tools import file_read  # noqa: E402
 
 
 class _FSRead(unittest.TestCase):
     """Base class that writes a scratch file under the project's `tests/` dir.
 
-    The filesystem tool rejects absolute paths, so the scratch file must live
+    The tools reject absolute paths, so the scratch file must live
     INSIDE the project tree. We write under `tests/` and clean up after.
     """
 
     def setUp(self):
-        self.tmpname = f"tests/_fs_summarize_scratch_{os.getpid()}.txt"
+        self.tmpname = f"tests/_file_read_summarize_scratch_{os.getpid()}.txt"
         self.abs_path = _ROOT / self.tmpname
 
     def tearDown(self):
@@ -53,14 +52,14 @@ class TestSummarizeDefault(_FSRead):
     def test_default_returns_raw_body(self):
         self._write("hello\nworld\n")
         with patch("tools.summarizer.summarize") as mock_k:
-            out = filesystem.execute("read", self.tmpname)
+            out = file_read.execute(self.tmpname)
             mock_k.assert_not_called()
         self.assertEqual(out, "hello\nworld\n")
 
     def test_explicit_false_returns_raw_body(self):
         self._write("alpha\nbeta\n")
         with patch("tools.summarizer.summarize") as mock_k:
-            out = filesystem.execute("read", self.tmpname, summarize=False)
+            out = file_read.execute(self.tmpname, summarize=False)
             mock_k.assert_not_called()
         self.assertEqual(out, "alpha\nbeta\n")
 
@@ -73,12 +72,12 @@ class TestSummarizeHappyPath(_FSRead):
         self._write(body)
         with patch("tools.summarizer.summarize",
                    return_value=("condensed view of three lines", "mock-model")) as mock_k:
-            out = filesystem.execute("read", self.tmpname, summarize=True)
+            out = file_read.execute(self.tmpname, summarize=True)
             mock_k.assert_called_once()
         # Envelope shape: header, summary text, footer marker.
         self.assertIn("[SUMMARY of ", out)
         self.assertIn(self.tmpname.replace("\\", "/"), out)
-        self.assertIn("3 lines]", out)
+        self.assertIn("4 lines]", out)
         self.assertIn("condensed view of three lines", out)
         self.assertIn("[END SUMMARY]", out)
         # Raw body MUST NOT appear in the envelope — otherwise we pay the token
@@ -97,7 +96,7 @@ class TestSummarizeHappyPath(_FSRead):
             return ("ok", "mock-model")
 
         with patch("tools.summarizer.summarize", side_effect=fake):
-            filesystem.execute("read", self.tmpname, summarize=True)
+            file_read.execute(self.tmpname, summarize=True)
 
         self.assertEqual(captured["content"], body)
         self.assertTrue(captured["rules"], "system_rules must be non-empty")
@@ -110,8 +109,8 @@ class TestSummarizeEmptyKernel(_FSRead):
         body = "keep this intact\n"
         self._write(body)
         with patch("tools.summarizer.summarize", return_value=("", "mock-model")):
-            out = filesystem.execute("read", self.tmpname, summarize=True)
-        self.assertIn("[SUMMARIZER RETURNED EMPTY", out)
+            out = file_read.execute(self.tmpname, summarize=True)
+        self.assertIn("[SUMMARIZER EMPTY", out)
         self.assertIn("keep this intact", out)
         # The raw body is preserved verbatim so the caller isn't left empty-handed.
         self.assertIn(body.strip(), out)
@@ -125,7 +124,7 @@ class TestSummarizeKernelException(_FSRead):
         self._write(body)
         with patch("tools.summarizer.summarize",
                    side_effect=RuntimeError("ollama down")):
-            out = filesystem.execute("read", self.tmpname, summarize=True)
+            out = file_read.execute(self.tmpname, summarize=True)
         self.assertIn("[SUMMARIZER FAILED", out)
         self.assertIn("ollama down", out)
         self.assertIn("still readable", out)
@@ -139,7 +138,7 @@ class TestSummarizeWithPagination(_FSRead):
     def test_summarize_on_paginated_read_preserves_footer(self):
         # Write a file larger than _BLOCK_SIZE so pagination engages.
         body = ("x" * 100 + "\n") * 400  # ~40_400 chars
-        self.assertGreater(len(body), filesystem._BLOCK_SIZE)
+        self.assertGreater(len(body), file_read._BLOCK_SIZE)
         self._write(body)
 
         captured = {}
@@ -149,10 +148,10 @@ class TestSummarizeWithPagination(_FSRead):
             return ("condensed-slice", "mock-model")
 
         with patch("tools.summarizer.summarize", side_effect=fake):
-            out = filesystem.execute("read", self.tmpname, block=0, summarize=True)
+            out = file_read.execute(self.tmpname, block=0, summarize=True)
 
         # The summarizer was handed exactly one block worth of content.
-        self.assertEqual(captured["content_len"], filesystem._BLOCK_SIZE)
+        self.assertEqual(captured["content_len"], file_read._BLOCK_SIZE)
         # The envelope wrapped the slice, not the full file.
         self.assertIn("[SUMMARY of ", out)
         self.assertIn("condensed-slice", out)
@@ -176,8 +175,8 @@ class TestSummarizeWithMaxLines(_FSRead):
             return ("condensed-head", "mock-model")
 
         with patch("tools.summarizer.summarize", side_effect=fake):
-            out = filesystem.execute("read", self.tmpname,
-                                     max_lines=10, summarize=True)
+            out = file_read.execute(self.tmpname,
+                                      max_lines=10, summarize=True)
 
         # The summarizer saw exactly the first 10 lines, not the whole file.
         self.assertIn("line 0", captured["content"])
@@ -186,14 +185,14 @@ class TestSummarizeWithMaxLines(_FSRead):
         # The envelope + truncation footer both land.
         self.assertIn("[SUMMARY of ", out)
         self.assertIn("condensed-head", out)
-        self.assertIn("[Showing first 10 of 100 total lines]", out)
+        self.assertIn("[Showing first 10 of 100 lines]", out)
 
 
 class TestSchemaContract(unittest.TestCase):
     """Tool-registry contract: summarize must appear as a boolean in TOOL_SCHEMA."""
 
     def test_schema_declares_summarize(self):
-        schema = filesystem.TOOL_SCHEMA
+        schema = file_read.TOOL_SCHEMA
         self.assertIn("summarize", schema)
         self.assertEqual(schema["summarize"]["type"], "boolean")
         self.assertIn("description", schema["summarize"])

@@ -41,11 +41,20 @@ What the kernel does NOT own:
     summary lives.
   - Tool-registry metadata. There is no TOOL_NAME / TOOL_DESCRIPTION /
     execute() here. The module is imported directly, not invoked via the
-    agent's tool-call contract. The agent-facing `summarize` tool (Phase 3)
+    agent's tool-call contract. The agent-facing    `summarize` tool (Phase 3)
     will be a separate thin module in this same folder.
 
-Design rationale recorded in decisions.md D-20260418-10.
+    Update v1.3.0: The kernel is now exposed directly as a tool via
+    TOOL_NAME / execute() to reduce file bloat.
 """
+
+TOOL_NAME        = "summarizer"
+TOOL_DESCRIPTION = "Condense arbitrary text using the model's summarization capability. Useful for distilling logs, long files, or thought transcripts."
+TOOL_ENABLED     = True
+TOOL_SCHEMA      = {
+    "content": {"type": "string", "description": "The text to summarize."},
+    "rules":   {"type": "string", "description": "(Optional) Specific instructions for the summary (e.g. 'bullet points only'). Default is a general descriptive summary."},
+}
 
 import sys
 from pathlib import Path
@@ -187,3 +196,14 @@ def summarize(
     messages = [{"role": "user", "content": user_content}]
     content, _ = client.chat(system_rules, messages, timeout=timeout)
     return (content or "").strip(), model_name
+
+
+def execute(content: str, rules: str = "") -> str:
+    """Standard Tool Registry execution entry point."""
+    system_rules = rules or (
+        "You are condensing the provided text into a concise, semantic summary. "
+        "Preserve key identifiers, dates, and technical decisions. "
+        "Return ONLY the summary text."
+    )
+    summary, model_used = summarize(content, system_rules)
+    return summary or "[SUMMARIZER PRODUCED NO OUTPUT]"

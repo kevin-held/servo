@@ -6,6 +6,24 @@
 
 The story of Servo, told in releases. Each entry summarizes what changed and why. For decision-level rationale, see `decisions.md`.
 
+## v1.3.0 — (2026-04-21) Toolset Modularization & Scope Refinement
+**Atomic Primitives & Symbolic Intelligence**
+
+### ✨ Key Improvements
+*   **Atomic File Primitives**: Decomposed the monolithic `filesystem` tool into four sharp, specialized tools: `file_read` (pagination/summarization), `file_write` (creation/appending), `file_list` (discovery), and `file_manage` (move/delete). This reduces schema "Tax" and improves model precision.
+*   **Project Mapping Engine**: Replaced the fuzzy `analyze_directory` with `map_project.py`. This tool provides a "Symbol View" (classes, methods, functions) of the workspace, giving the model a capability map rather than a raw content dump.
+*   **Kernel Exposure**: Exposed the `summarizer` kernel as a first-class tool, allowing the agent to explicitly condense arbitrary text blocks to manage context pressure.
+*   **Prompt Synchronicity**: Updated Rule 11 and the Large-File guidance in the Core Loop to standardise on the new primitives.
+*   **Cleanup**: Formally purged `filesystem.py` and `analyze_directory.py` from the project registry.
+
+### 🐛 Critical Hotfixes & Stability
+*   **System Prompt Integrity**: Fixed a critical regression in `core/loop.py` where a missing `return base` statement in the prompt builder caused the model to perceive an empty toolset.
+*   **Greedy JSON Parsing**: Refined the tool-call extraction regex (`(?s)({.*})`) to be greedy, ensuring nested JSON objects are fully captured and do not leak residue into the conversation UI.
+-   **Terminal Response Emission**: Restored the `self.response_ready.emit` logic in the ACT phase to ensure tool-generated summaries are reliably surfaced to the UI window.
+*   **Test Suite Migration**: Migrated 100% of legacy filesystem and directory tests to the new atomic primitive set, ensuring functional parity and a 100% pass rate (202/202 tests).
+
+---
+
 ## v1.2.4 — (2026-04-21) Transparency & Tool Visibility Hardening
 **Executive Authority & Alignment**
 

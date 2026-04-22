@@ -1,6 +1,6 @@
 import unittest
 import os
-from tools import web_search, fetch_url, shell_exec, filesystem
+from tools import web_search, fetch_url, shell_exec, file_read, file_write, file_list
 
 class TestToolsE2E(unittest.TestCase):
     """
@@ -30,20 +30,20 @@ class TestToolsE2E(unittest.TestCase):
         output = shell_exec.execute("echo test_run_success")
         self.assertIn("test_run_success", output)
 
-    def test_filesystem_rw(self):
+    def test_atomic_file_ops_e2e(self):
         test_file = "tests/e2e_rw_test.txt"
         
         # 1. Write
-        w_out = filesystem.execute("write", test_file, "E2E OK")
-        self.assertIn("Wrote", w_out)
+        w_out = file_write.execute(test_file, "E2E OK")
+        self.assertIn("Wrote", w_out or "")
         self.assertTrue(os.path.exists(test_file))
         
         # 2. Read
-        r_out = filesystem.execute("read", test_file)
+        r_out = file_read.execute(test_file)
         self.assertEqual("E2E OK", r_out.strip())
         
         # 3. List
-        l_out = filesystem.execute("list", "tests")
+        l_out = file_list.execute("tests")
         self.assertIn("e2e_rw_test.txt", l_out)
         
         # Cleanup

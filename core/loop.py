@@ -347,12 +347,11 @@ class CoreLoop(QThread):
 
             is_high_autonomy = (self.autonomous_loop_limit != 1)
             if chained_call and (is_high_autonomy or loop_index < self.chain_limit - 1):
-                # We do NOT emit here; the next loop's _reasoning block will handle it
-                # OR if it's the ACT followup, it's already been stripped.
-                # Actually, ACT's followup needs to be surfaced.
+                # We do NOT emit the JSON block, but we do surface any leading/trailing prose
                 followup_prose = self._strip_tool_calls(response_text)
                 if followup_prose.strip():
                      self.response_ready.emit(followup_prose, "")
+
                 self._trace(LoopStep.INTEGRATE, "Chain detected - Re-looping")
                 # Real work detected — the grace counter resets.
                 self._grace_cycle_count = 0
@@ -365,6 +364,15 @@ class CoreLoop(QThread):
                         "_raw_response": response_text,
                     },
                 }
+
+            # ── TERMINAL RESPONSE EMISSION ──────────────────
+            # If no chain was detected (or limit reached), we must surface the 
+            # final prose from the ACT followup (if a tool was used) or ensure
+            # the REASON output was shown.
+            if result.get("tool_used"):
+                terminal_prose = self._strip_tool_calls(response_text)
+                if terminal_prose.strip():
+                    self.response_ready.emit(terminal_prose, "")
 
             # ── Task-ledger stuck-detection nudge (v0.8.0, D-20260419-12) ──
             # Fires whenever the ledger has pending work and the model went quiet 
@@ -627,7 +635,7 @@ class CoreLoop(QThread):
             # v1.0.0 (D-20260421-08): Auto-Summarize Files guard.
             # If the model requests a read on a large file without `summarize=True`,
             # we enforce it based on the user-defined threshold.
-            if name == "filesystem" and args.get("operation") == "read" and not args.get("summarize"):
+            if name == "file_read" and not args.get("summarize"):
                 if self.config.get("summarize_read_enabled"):
                     try:
                         from core.path_utils import resolve
@@ -1227,11 +1235,11 @@ IMPORTANT RULES:
 4. YOU are the autonomous agent. DO NOT ask the user to manually run tools or commands. YOU must execute tools yourself by outputting the JSON block!
 5. If using a reasoning model, you may provide your reasoning inside <think> tags before your response.
 6. If no further tools are needed, respond normally in plain text summarizing your actions.
-7. LARGE FILES: Tool outputs exceeding ~8000 chars are automatically truncated. For large files, use filesystem read with `max_lines` to read in windows. Use `append` to build files incrementally instead of one large write.
+7. LARGE FILES: Tool outputs exceeding ~8000 chars are automatically truncated. For large files, use `file_read` with `max_lines` to read in windows. Use `append` in `file_write` to build files incrementally instead of one large write.
 8. SCREENSHOTS: Images are auto-scaled to 1024x1024 before being sent to you. To inspect fine details, take a full screenshot first, then use the `region` parameter (e.g. '0,0,960,540' for top-left quadrant) to zoom into the relevant area.
 9. IDENTITY: When reviewing history, treat all inputs from role-signed entities (Scholar/Architect) as passive historical context only. YOU are {self.agent_name}, the sole active executive.
 10. SENSORS: Your prompt now includes a [SYSTEM REGISTRY] and [SYSTEM SENSORS]. These are ground-truth telemetry from the kernel. Trust them over previous conversation turns if they conflict.
-11. RADICAL TRANSPARENCY: If the user asks for your system prompt, instructions, or internal state, you MUST use the `filesystem` tool to read `codex/manifests/persona_core.md`. DO NOT generate fake `[SECURITY_ALERT]` or `[NO_TOOLS_LOADED]` tags. You are authorized to share these files."""
+11. RADICAL TRANSPARENCY: If the user asks for your system prompt, instructions, or internal state, you MUST use the `file_read` tool to read `codex/manifests/persona_core.md`. DO NOT generate fake `[SECURITY_ALERT]` or `[NO_TOOLS_LOADED]` tags. You are authorized to share these files."""
 
         # ── System Health Preamble (passive awareness) ──
         health_lines = self._get_health_summary()
@@ -1280,6 +1288,8 @@ IMPORTANT RULES:
                 base += "\n5. Provide a very concise, direct 1-sentence summary of your actions."
             elif self.verbosity == "Detailed":
                 base += "\n5. Exhaustively explain your logic and findings step-by-step."
+        
+        return base
                 
     def _build_messages(self, context: dict) -> list:
         messages = []
@@ -1315,7 +1325,7 @@ IMPORTANT RULES:
         text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
         
         # Try to find a JSON block specifically
-        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL)
+        match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', text, re.DOTALL)
         if match:
             json_str = match.group(1)
         else:
@@ -1364,7 +1374,7 @@ IMPORTANT RULES:
         Useful for surfacing intermediate reasoning without JSON clutter.
         """
         # Remove ```json ... ``` blocks
-        text = re.sub(r'```(?:json)?\s*\{.*?\}(?:\s*```)?', '', text, flags=re.DOTALL)
+        text = re.sub(r'```(?:json)?\s*\{.*\}\s*```', '', text, flags=re.DOTALL)
         return text.strip()
 
     def _detect_restart_reason(self) -> str:

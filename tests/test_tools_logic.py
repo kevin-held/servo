@@ -8,7 +8,7 @@ from pathlib import Path
 # Since these tools often rely on paths or external libs, we might need to mock them,
 # but we can test the pagination logic explicitly.
 from tools import youtube_transcript
-from tools import analyze_directory
+from tools import map_project
 
 class TestToolsLogic(unittest.TestCase):
     def setUp(self):
@@ -40,19 +40,22 @@ class TestToolsLogic(unittest.TestCase):
             self.assertFalse("Call again with block" in res1)
             self.assertTrue(15000 > len(res1) >= 5000)
 
-    def test_analyze_directory_safety(self):
+    def test_map_project_logic(self):
         # We must use project-relative paths to bypass the tool's absolute path security restrictions
         tmp_path = tempfile.mkdtemp(dir="tests")
         rel_tmp = os.path.relpath(tmp_path).replace("\\", "/")
-        os.makedirs(os.path.join(tmp_path, "logs"))
-        with open(os.path.join(tmp_path, "logs", "test.log"), "w") as f:
-            f.write("Line 1\nLine 2")
+        os.makedirs(os.path.join(tmp_path, "core"))
+        with open(os.path.join(tmp_path, "core", "test_mod.py"), "w") as f:
+            f.write("def test_func(): pass\nclass TestClass: pass\n")
             
-        res = analyze_directory.execute(rel_tmp, recursive=True)
-        self.assertTrue("[STRUCTURE]" in res)
-        self.assertTrue("logs\\test.log" in res or "logs/test.log" in res)
-        self.assertTrue("[FILE CONTENTS]" in res)
-        self.assertTrue("Line 1" in res)
+        res = map_project.execute(rel_tmp)
+        self.assertTrue("=== PROJECT MAP:" in res)
+        self.assertTrue("core\\test_mod.py" in res or "core/test_mod.py" in res)
+        self.assertTrue("FUNC:test_func" in res)
+        self.assertTrue("CLASS:TestClass" in res)
+        
+        # Cleanup
+        shutil.rmtree(tmp_path, ignore_errors=True)
 
 if __name__ == "__main__":
     unittest.main()

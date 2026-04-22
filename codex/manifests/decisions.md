@@ -477,5 +477,26 @@ The `CoreLoop` was modified to fetch these values live from `self.state` at the 
 3.  **Mandatory Override**: Add Rule 11 to the system prompt's final instruction set, explicitly forbidding prompt-access refusals and "Administrator" boilerplate.
 **Consequences:** Improved alignment, reduced friction, and guaranteed operator access to internal system state.
 
+### D-20260421-14 — Decomplexification: God-Tools Decomposed into Atomic Primitives
+**Date:** 2026-04-21
+**Status:** Accepted
+**Context:** The `filesystem` and `analyze_directory` tools had become "God-Tools" — monolithic entries that handled everything from structural discovery and file mapping to pagination and management. This created three problems: (1) enormous tool-description bloat (the "Tax") consuming valuable context every turn; (2) blurred model focus (the model would often confuse pagination parameters with write operations); and (3) limited symbolic awareness (listing filenames is insufficient for complex project navigation).
+**Decision:** Decompose the God-Tools into a sharp, atomic primitive set.
+- **Atomic File Primitives**: Split `filesystem` into `file_read` (pagination/summary), `file_write` (content), `file_list` (discovery), and `file_manage` (delete/move).
+- **Symbolic Mapping**: Replace `analyze_directory` with `map_project`, which uses regex-based symbol extraction (classes, functions, methods) to provide a "functional map" of a project's capabilities.
+- **Kernel Exposure**: Expose the `summarizer` kernel specifically so the model can explicitly condense text as a first-class operation.
+**Consequences:** Drastically reduced prompt Tax (smaller tool schemas). Higher model precision by forcing the model to select the correct primitive for the task. Improved project navigation via symbol-aware mapping. Tradeoff: The model must now make more sequential tool calls for complex management tasks (e.g. read → write → move), but this transparent chain is easier for the operator to audit and for the loop to recover.
+
+### D-20260421-15 — Core Loop Hardening & Regression Recovery (v1.3.0 Stability)
+**Date:** 2026-04-21
+**Status:** Accepted
+**Context:** The transition to atomic primitives in v1.3.0 (D-20260421-14) introduced several regressions in the Core Loop. Specifically: (1) a missing `return` statement in the `_build_system_prompt` refactor caused the model to received an empty instruction set, leading to "I have no tools" hallucinations; (2) the tool-call extraction regex was terminating prematurely on nested JSON objects, leaving bracket residue in the UI; and (3) tool-generated execution summaries were not being emitted to the conversation window during the ACT phase.
+**Decision:** Execute a stabilization pass on `core/loop.py`.
+-   **Return Guard**: Restored the `return base` instruction in `_build_system_prompt`.
+-   **Greedy Regex**: Updated the tool-call parser to utilize greedy matching (`(?s)({.*})`) to capture complex, nested JSON arguments in a single pass.
+-   **UX Restoration**: Re-wired the `response_ready.emit` signal in the ACT phase to ensure terminal tool summaries are visible to the operator.
+-   **Test Migration**: Migrated all legacy integration tests from the monolithic `filesystem` and `analyze_directory` providers to the new atomic primitive set (`file_read`, `map_project`).
+**Consequences:** Restoration of system stability and UI clarity. The agent's identity and tool-awareness are secured, and the UI correctly reflects the outcomes of atomic tool chains.
+
 ---
 *Append-only. To supersede an entry, add a new one and update the old entry's Status line.*

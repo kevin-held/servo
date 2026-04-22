@@ -82,7 +82,7 @@ class TestCoreLoopHardened(unittest.TestCase):
         self.assertEqual(res["path"], "C:\\work")
 
     def test_act_summarize_guard(self):
-        reasoning = {"tool_call": {"tool": "filesystem", "args": {"operation": "read", "path": "test.txt"}}, "context": {"input": "r", "history": []}, "raw_response": "r"}
+        reasoning = {"tool_call": {"tool": "file_read", "args": {"path": "test.txt"}}, "context": {"input": "r", "history": []}, "raw_response": "r"}
         with patch("core.path_utils.resolve") as m_res:
             m_p = MagicMock(spec=Path)
             m_p.is_file.return_value = True

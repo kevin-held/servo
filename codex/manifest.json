@@ -1,7 +1,7 @@
 {
   "name": "Servo",
   "lineage": "Cybernetic Actuator",
-  "version": "1.2.4",
+  "version": "1.3.0",
   "description": "An autonomous local-AI executive layer. One persistent process that perceives, reasons, and acts on its own environment through a unified architecture organized into three canonical layers: Cortex (ephemeral runtime), Persona (invariant identity), Codex (on-disk truth).",
   "layers": {
     "cortex":  "The six-step core loop (core/loop.py). Ephemeral runtime; allowed to lose state on restart. Reference implementation, expected to be obsoleted by future models with embedded schedulers.",
@@ -28,7 +28,7 @@
     "llm":      "Ollama HTTP (http://localhost:11434) — controls num_predict and conversation_history only; num_ctx is not touched",
     "state":    "SQLite (WAL) for conversation/memory/trace/state; ChromaDB for episodic vector memory (auto-pruned to 1000 entries)",
     "logging":  "Sentinel JSONL with rotation (5 MB threshold)",
-    "tools":    "Dynamic registry via importlib. Contract: TOOL_NAME, TOOL_DESCRIPTION, TOOL_ENABLED, TOOL_SCHEMA, execute(...)"
+    "tools":    "Dynamic registry via importlib. Contract: TOOL_NAME, TOOL_DESCRIPTION, TOOL_ENABLED, TOOL_SCHEMA, execute(...). v1.3.0: Standardized on atomic primitives: file_read, file_write, file_list, file_manage, map_project."
   },
   "hardware_policy": {
     "critical_gate": "Critical requires BOTH RAM >= 95% AND VRAM >= 95% (AND-gate in core/hardware.py).",
