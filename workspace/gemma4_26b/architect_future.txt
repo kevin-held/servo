@@ -1,0 +1,70 @@
+import re
+import chromadb
+from datetime import datetime
+
+class lx_Integrate(Cognate):
+    """_Cognate: Converts execution traces into ChromaDB Success Vectors."""
+    
+    def __init__(self, core, chroma_client: chromacdb.Client):
+        super().__init__(core)
+        self.db = chroma_client.get_collection("procedural_wins")
+
+    def _parse_report(self, report_text: str) -> dict:
+        """Extracts metrics from the LX_POLYMORPH_ANALYSIS_REPORT format."""
+        metrics = {}
+        latency_matches = re.findall(r"Variant: (\w+) \| Latency_Mu: ([\d.e+-]+) \| Latency_Sigma: ([\d.e+-]+)", report_text)
+        for variant, mu, sigma in latency_matches:
+            metrics[f"{variant}_latency_mu"] = float(mu)
+            metrics[f"{variant}_latency_sigma"] = float(sigma)
+        
+        epsilon_matches = re.findall(r"Variant: (\w+) \| .*? Epsilon: ([\d.e+-]+)", report_text)
+        for variant, epsilon in epsilon_matches:
+            metrics[f"{variant}_epsilon"] = float(epsilon)
+            
+        return metrics
+
+    def execute(self, state: dict) -> dict:
+        """
+        Processes the 'last_trace' in state and commits to ChromaDB.
+        """
+        trace = state.get("last_trace", "")
+        if not trace:
+            return {"status": "SKIPPED", "reason": "No trace found in state"}
+
+        try:
+            extracted_metrics = self._parse_report(trace)
+            
+            metadata = {
+                "timestamp": datetime.utcnow().iso_format(),
+                "success_flag": 1,
+                "lx_prefix_enforced": True,
+                **extracted_metrics
+            }
+
+            doc_id = f"win_{datetime.utcnow().timestamp()}"
+            
+            self.db.add(
+                documents=[trace],
+                metadatas=[metadata],
+                ids=[doc_id]
+            )
+
+            return {
+                "status": "SUCCESS",
+                "integrated_id": doc_id,
+                "metrics_captured": list(extracted_metrics.keys())
+            }
+        except Exception as e:
+            return {"status": "ERROR", "error": str(e)}
+
+# --- ORCHESTRATOR LOGIC ---
+# def run_cycle(self):
+#     step_key = self.state["current_step"]
+#     cognate = self.registry[step_key]
+#     
+#     result = cognate.execute(self.state)
+#     self.state.update(result)
+#     
+#     if "last_trace" in self.state:
+#         integration_result = self.registry["INTEGRATE"].execute(self.state)
+#         self.state.update(integration_result)
