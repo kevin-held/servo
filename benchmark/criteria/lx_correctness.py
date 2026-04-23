@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -24,22 +25,30 @@ class CorrectnessAudit(unittest.TestCase):
     """
 
     def setUp(self):
-        # Use a temporary audit database and chroma instance
+        # Use a temporary audit database and chroma instance.
+        # D-20260423 (Phase C): Route chroma_path into a tempdir so setUp
+        # works on sandbox mounts (e.g. OneDrive-on-Linux) where chromadb's
+        # embedded SQLite can't acquire file locks. On native filesystems
+        # this is equivalent to the previous profile-scoped path.
         from core.state import StateStore
-        self.state = StateStore(profile="lx_audit_temp")
+        tmp = tempfile.mkdtemp(prefix="lx_audit_")
+        self.state = StateStore(
+            db_path=f"{tmp}/state.db",
+            chroma_path=f"{tmp}/chroma",
+            profile="lx_audit_temp",
+        )
 
     def test_handshake_persistence(self):
         """MVB 1: Verify that lx_StateDelta payloads persist correctly."""
         delta = lx_StateDelta("audit.perf_lock", "0.05")
-        
+
         # Mapping delta to current SQLite schema
-        # In v1.x: state.conn.execute("INSERT OR REPLACE INTO state...")
         self.state.conn.execute(
             "INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)",
             (delta.key, str(delta.value))
         )
         self.state.conn.commit()
-        
+
         cur = self.state.conn.execute("SELECT value FROM state WHERE key = ?", (delta.key,))
         row = cur.fetchone()
         self.assertIsNotNone(row, "Handshake failed: Key not found in DB.")
@@ -49,17 +58,15 @@ class CorrectnessAudit(unittest.TestCase):
         """MVB 2: Verify ToolRegistry can load tools and identify System tier."""
         from core.tool_registry import ToolRegistry
         registry = ToolRegistry(tools_dir=str(PROJECT_ROOT / "tools"))
-        
+
         self.assertGreater(len(registry._tools), 0, "No tools loaded.")
-        # Task is a known System tool in v1.3.4
         if "task" in registry._tools:
             self.assertTrue(registry._tools["task"]["is_system"], "Tier mismatch.")
 
     def test_idiot_filter_regression(self):
         """MVB 3: Verify that syntax-broken hallucinations are rejected."""
-        # Simple regression test for the 'Double-Closing Parenthesis' failure pattern
         broken_code = "for i in range(10)):\n    print(i)"
-        
+
         with self.assertRaises(SyntaxError):
             compile(broken_code, "<string>", "exec")
 
@@ -67,22 +74,25 @@ class CorrectnessAudit(unittest.TestCase):
         """MVB 4: Verify ServoCore.run_cycle handshake with lx_state."""
         from core.core import ServoCore
         from core.lx_state import lx_StateStore
-        
+
         core = ServoCore()
-        store = lx_StateStore()
-        
-        # Inject halt condition into the plan to prevent infinite loop in audit
-        # Sequence: OBSERVE -> REASON (inject halt) -> ACT -> Break
+        # D-20260423 (Phase C): scoped profile + reset() guarantees a clean
+        # OBSERVE cursor regardless of any persistent mirror from a prior run.
+        store = lx_StateStore(profile="lx_audit_handshake")
+        store.reset()
+
+        # Inject halt condition to prevent infinite loop during audit:
+        # OBSERVE -> REASON -> ACT (halt set here) -> break
         original_apply = store.apply_delta
         def mock_apply_delta(delta):
             original_apply(delta)
             if delta.get("current_step") == "ACT":
                 store.current_state["halt"] = True
-        
+
         store.apply_delta = mock_apply_delta
-        
+
         core.run_cycle(store)
-        
+
         self.assertEqual(store.current_state["current_step"], "ACT")
         self.assertTrue(store.current_state["halt"])
 
@@ -91,7 +101,7 @@ def run_audit() -> dict:
     suite = unittest.TestLoader().loadTestsFromTestCase(CorrectnessAudit)
     runner = unittest.TextTestRunner(verbosity=0)
     result = runner.run(suite)
-    
+
     return {
         "metric": "lx_correctness",
         "pass": result.wasSuccessful(),

@@ -1,0 +1,30 @@
+{
+  "current_step": "OBSERVE",
+  "last_trace": "INTEGRATE: R=0.991 committed=False",
+  "observation_signature": "685663366ab5818d",
+  "env_audit": {
+    "core": 16,
+    "gui": 9,
+    "tools": 19,
+    "codex": 0
+  },
+  "plan": "dispatch file_list (mode=exploit, eps=0.300)",
+  "planned_tool": "file_list",
+  "planned_args": {
+    "path": ".",
+    "recursive": false
+  },
+  "decision_mode": "exploit",
+  "epsilon": 0.3,
+  "last_outcome": {
+    "status": "ok",
+    "return_value": "FOLDER .git\nFOLDER .pytest_cache\nFOLDER __pycache__\nFOLDER benchmark\nFOLDER codex\nFOLDER configs\nFOLDER core\nFOLDER gui\nFOLDER logs\nFOLDER scratch\nFOLDER screenshots\nFOLDER snapshots\nFOLDER state\nFOLDER tests\nFOLDER tmpjet2dak8\nFOLDER tools\nFOLDER workspace\n  .coverage\n  .gitignore\n  README.md\n  UPGRADE_PLAN.md\n  UPGRADE_PLAN_2.md\n  __init__.py\n  e2e_simple.txt\n  eval_results.csv\n  main.py\n  requirements.txt\n  state.db",
+    "stderr": "",
+    "latency_ms": 9.19943000008061,
+    "tool_name": "file_list",
+    "args_fingerprint": "2c56c778dec062b3"
+  },
+  "last_reward": 0.9909,
+  "last_committed": false,
+  "integrated": true
+}

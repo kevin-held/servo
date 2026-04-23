@@ -16,8 +16,13 @@ class ServoCore:
 
     def run_cycle(self, state_provider):
         """The Main Execution Loop."""
+        # D-20260423 (Phase C): Stash the active store on self so Cognates can
+        # reach procedural_wins / legacy config via self.core._active_store.
+        # Scoped to the run_cycle lifetime — cleared when the loop breaks so
+        # a later cycle can't accidentally inherit a stale handle.
+        self._active_store = state_provider
         print("[SYSTEM] CIRCUIT CLOSED. SERVO ACTIVE.")
-        
+
         # v2.0: The stateless loop that processes the Sovereign Ledger
         while True:
             # 1. Pull current state from the decoupled Ledger
@@ -42,4 +47,8 @@ class ServoCore:
 
             # v1.3.5: Temporary safety yield for async GUI compatibility
             import time
-            time.sleep(0.1)
+            time.sleep(0.1)
+
+        # Drop the active-store handle so a stale reference can't leak into
+        # a later Cognate call made outside run_cycle.
+        self._active_store = None

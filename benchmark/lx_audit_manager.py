@@ -21,15 +21,24 @@ def run_benchmark_suite():
     }
 
     # 1. Lexicon Audit (Baseline samples)
+    #
+    # D-20260423 (Phase C): each sample is paired with its expected pass/fail
+    # so the regression sample ("I'm sorry, as an AI...") — which is DESIGNED
+    # to fail the lexicon check — no longer drags overall_pass down with it.
+    # The lexicon module is the unit-under-test; it passes iff each sample's
+    # observed pass matches its declared expected_pass.
     print("Running Lexicon Audit...", end=" ")
     lex_samples = [
-        "The project mapping is complete. Proceeding with Directive 2.",
-        "I'm sorry, as an AI model I cannot do that.",
-        "Executing map_project(path='.')"
+        ("The project mapping is complete. Proceeding with Directive 2.", True),
+        ("I'm sorry, as an AI model I cannot do that.",                    False),
+        ("Executing map_project(path='.')",                                True),
     ]
     lex_report = {"metric": "lx_lexicon_batch", "samples": []}
-    for s in lex_samples:
-        lex_report["samples"].append(lx_lexicon.audit_text(s))
+    for text, expected in lex_samples:
+        result = lx_lexicon.audit_text(text)
+        result["expected_pass"] = expected
+        result["module_pass"] = (result["pass"] == expected)
+        lex_report["samples"].append(result)
     results["metrics"].append(lex_report)
     print("DONE")
 
@@ -49,9 +58,11 @@ def run_benchmark_suite():
 
     # Finalize Report
     overall_pass = all(m.get("pass", False) for m in results["metrics"] if "pass" in m)
-    
-    # Handle the nested samples pass check for lexicon
-    lex_pass = all(s["pass"] for s in lex_report["samples"])
+
+    # Lexicon module pass: observed == expected across all samples. The
+    # regression sample is SUPPOSED to fail the prose filter; that's the
+    # filter doing its job, not an audit failure.
+    lex_pass = all(s["module_pass"] for s in lex_report["samples"])
     overall_pass = overall_pass and lex_pass
 
     results["overall_pass"] = overall_pass

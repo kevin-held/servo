@@ -371,4 +371,25 @@ Servo started as a continuous-loop agent with a Sentinel/Architect/Analyst/Schol
  *   **Fresh State Synchronization**: Mandated a working memory synthesis during chores to ensure total alignment between the model, the user, and the current source code state.
  
  ---
+
+## v1.4.0 — Phase C: Cognate Intelligence Pass (2026-04-23)
+**The circuit learns.** Phase B closed the loop; Phase C fills it with cognition.
+
+### ✨ Key Improvements
+*   **Sovereign Ledger Durability**: `lx_StateStore` now persists to `state/lx_state_<profile>.json` (byte-identical mirror of `current_state`) and commits Success Vectors to a ChromaDB `procedural_wins` collection per profile.
+*   **Real Cognate Bodies**: `lx_Observe` emits a sha1 observation signature from structural Python-file counts. `lx_Reason` runs ε-greedy tool selection with exponential decay (ε₀=0.3, λ=0.001) and post-failure pivots. `lx_Act` dispatches atomic primitives through a constrained ToolRegistry with a lexicon halt gate. `lx_Integrate` synthesizes R = Φ · (L · P) and commits iff R ≥ 0.8.
+*   **ToolOutcome Contract**: New `core/lx_outcomes.py` dataclass carries `status`, `return_value`, `stderr`, `latency_ms`, `tool_name`, `args_fingerprint` between Cognates — the first common vocabulary for inter-Cognate feedback.
+*   **Atomic Dispatch Surface**: Phase C restricts the loop to six verified primitives (`file_read`, `file_write`, `file_list`, `file_manage`, `map_project`, `summarizer`) per D-20260421-14; system-tier tools (D-20260422-05) are filtered and deferred to Phase D.
+*   **Reference Preservation for loop.py**: Phase C's `lx_StateStore` opens the legacy `state.db` in URI read-only mode. Zero writes to loop.py paths (`git diff --ignore-cr-at-eol core/loop.py` empty). The legacy boot path remains untouched as a reference artifact.
+*   **Environment-Portable ProceduralWins**: Metadata-only exact-match queries with dummy embeddings mean the Success Vector collection transfers across machines without ONNX model downloads. Phase D can swap in real embeddings when NN matching lands.
+*   **Audit Fence Sharpening**: Lexicon samples are now `(text, expected_pass)` tuples — the regression sample ("I'm sorry, as an AI...") is supposed to fail the filter, and module-pass is now `observed == expected`. `Overall Pass: True` is once again a meaningful signal.
+
+### 🐛 Stability & Hardening
+*   **Graceful Chroma Degradation**: Missing or corrupt `procedural_wins` index leaves `_procedural_wins = None` — commits silently skip and queries return `[]`. The loop still cycles without the reinforcement signal rather than opening the circuit.
+*   **Merge-Only Delta Apply**: `apply_delta` merges into `current_state` instead of overwriting — prevents parallel Cognates or halt signals from being dropped.
+*   **Active-Store Lifecycle**: `ServoCore.run_cycle` stashes `self._active_store = state_provider` at loop start and clears it when the loop breaks, so a stale handle can't leak into a later out-of-cycle Cognate call.
+*   **Correctness setUp Portability**: Legacy StateStore is routed into a tempdir so setUp works on sandbox mounts where chromadb's embedded SQLite can't acquire file locks. `test_core_loop_handshake` uses a scoped profile + `store.reset()` to guarantee a clean OBSERVE cursor.
+*   **Stale `.pyc` Flush**: Bumped lx_state.py mtime to force Python to recompile away a stale bytecode that was missing the `embeddings` kwarg in the commit path — commits now actually land.
+
+---
  *Append a new section per release. Do not rewrite history.*

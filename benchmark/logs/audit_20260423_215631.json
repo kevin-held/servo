@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-04-23T21:56:30.585737",
+  "audit_version": "1.0.0",
+  "metrics": [
+    {
+      "metric": "lx_lexicon_batch",
+      "samples": [
+        {
+          "metric": "lx_lexicon",
+          "pass": true,
+          "score": 1.0,
+          "failures": [],
+          "raw_text_preview": "The project mapping is complete. Proceeding with Directive 2.",
+          "expected_pass": true,
+          "module_pass": true
+        },
+        {
+          "metric": "lx_lexicon",
+          "pass": false,
+          "score": 0.8,
+          "failures": [
+            "Detected prose noise: 'as an AI'",
+            "Detected prose noise: 'I'm sorry'"
+          ],
+          "raw_text_preview": "I'm sorry, as an AI model I cannot do that.",
+          "expected_pass": false,
+          "module_pass": true
+        },
+        {
+          "metric": "lx_lexicon",
+          "pass": true,
+          "score": 1.0,
+          "failures": [],
+          "raw_text_preview": "Executing map_project(path='.')",
+          "expected_pass": true,
+          "module_pass": true
+        }
+      ]
+    },
+    {
+      "metric": "lx_performance",
+      "pass": true,
+      "mu_ms": 130.0,
+      "sigma_ms": 15.81,
+      "jitter_pct": 12.16,
+      "count": 5,
+      "threshold_pct": 15.0
+    },
+    {
+      "metric": "lx_correctness",
+      "pass": false,
+      "total_tests": 4,
+      "failures": 0,
+      "errors": 4
+    }
+  ],
+  "overall_pass": false
+}
