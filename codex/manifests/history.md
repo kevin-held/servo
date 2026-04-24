@@ -1,10 +1,39 @@
 # History — How Servo Got Here
 
 **Version:** 1.0
-**Last Updated:** 2026-04-21
+**Last Updated:** 2026-04-23
 **Status:** Canonical (append on each release)
 
 The story of Servo, told in releases. Each entry summarizes what changed and why. For decision-level rationale, see `decisions.md`.
+
+## v1.5.0 — (2026-04-23) Phase D: Servo Core Intelligence Upgrade
+**Semantic Memory & Unified Dispatch Surface**
+
+### ✨ Key Improvements
+*   **Real nomic-embed-text embeddings**: `OllamaClient.embed()` lands 768-dim vectors into the `procedural_wins` ChromaDB collection (cosine metric). `commit_success_vector` accepts an optional embedding; `None`/wrong-dim/degenerate inputs fall back to a zero vector with an `embed_source` metadata tag so NN queries can filter them out.
+*   **Semantic kNN procedural recall**: `query_success_vectors` gained an `obs_embedding` + `similarity_floor=0.7` branch. Cosine-distance neighbors return annotated with `_similarity = 1 - distance`. `lx_Reason._exploit` now blends `reward × similarity`, so high-reward distant neighbors don't eclipse perfect-match lower-reward rows. Exact-match branch kept as the fallback when no embedding is available.
+*   **Single-embed-per-cycle**: `lx_Observe` embeds the rich pre-hash payload once and stashes it in `state["observation_embedding"]`; `lx_Reason` and `lx_Integrate` reuse it. Halves per-cycle embed latency and guarantees commit-vs-query consistency.
+*   **Symbolic-drift observation**: `lx_Observe._snapshot_environment` now returns a per-root `(files, symbols, classes, functions, imports)` 5-tuple via `ast.parse`, cached on `(mtime_ns, size)`. Adding or removing a class/function registers as drift even without a file-count change.
+*   **ToolOutcome fingerprinting**: Dataclass gained sha1 fingerprints + byte counts for `return_value` and `stderr`. `.compact_metadata()` returns the fingerprint-only view so `procedural_wins` rows stay cheap as the surface grows.
+*   **Full-surface dispatch (6 → 11)**: `task`, `system_config`, `context_dump`, `memory_manager`, `memory_snapshot` are now under Cognate dispatch at the same reward tier as the six atomic primitives. Each has a read-only / idempotent default-arg set; `_FORBIDDEN_TOOLS` is empty.
+*   **Loop-ref shim (`core/lx_loop_shim.py`)**: Installable `_Sqlite3Proxy` intercepts legacy-path `sqlite3.connect()` inside the sys-tool modules and redirects to a Cognate-owned `state/_lx/lx_memory.db`. `LxLoopAdapter` satisfies the `_get_loop_ref()` surface. Global `sqlite3.connect` also swapped for an alias-proof interceptor. Everything reversible via `ShimHandle.uninstall()`.
+
+### 🧪 Acceptance
+*   **Step 7 acceptance (`scratch/phase_d/step7_acceptance.py`)**: 10 scenarios pass (A–J) — semantic hit, semantic miss, zero-vec exclusion, None/wrong-dim/zero-vec fallbacks, blended exploit ranking near CLOSE and near FAR anchors, stderr pivot, `lx_Integrate` no-double-embed, `lx_Observe` emission, OBSERVE→REASON wiring.
+*   **Step 8 bench (`scratch/phase_d/step8_shim_nowrite_bench.py`)**: 50-cycle sys-tool mix (17 task / 17 memory_manager / 16 memory_snapshot) under the installed shim. `state/state.db` byte-identical (sha256 match) before/after. Redirect `lx_memory.db` grew to 20 KB. Zero errors.
+*   **Phase A audit**: `python -m benchmark.lx_audit_manager` returns `Overall Pass: True`. Lexicon module-pass, performance jitter 12.16% (threshold 15%), correctness 4/4.
+
+### 🔧 Internals
+*   `_EMBED_DIM = 768` pinned as a module-level constant in `core/lx_state.py`.
+*   ChromaDB collections created with `metadata={"hnsw:space": "cosine"}` so the 0.7 similarity floor is on a bounded scale.
+*   `ServoCore.run_cycle` installs the shim inside a `try/finally` so the uninstall always fires, even on halt-gate short-circuits.
+
+### 🧭 Phase E Handoff
+*   Config-registry migration for hardcoded tunables (`_EPSILON_0`, `_LAMBDA`, `_COMMIT_THRESHOLD`, `similarity_floor`).
+*   Refactor `memory_manager` / `memory_snapshot` to accept a `conn_factory` kwarg so the shim can retire.
+*   Richer cold-start signals from `env_audit` for the case where `procedural_wins` is empty.
+
+---
 
 ## v1.3.0 — (2026-04-21) Toolset Modularization & Scope Refinement
 **Atomic Primitives & Symbolic Intelligence**

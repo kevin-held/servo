@@ -65,13 +65,15 @@ class OllamaClient:
         self,
         model:       str = "gemma4:26b",
         base_url:    str = "http://localhost:11434",
+        embed_model: str = "nomic-embed-text",
     ):
         self.model       = model
         self.base_url    = base_url
+        self.embed_model = embed_model
         self.temperature = 0.6
         self.num_predict = 16384 # manual testing stable with this param, not too high
         self.num_ctx     = 32768 # Default context window
-        
+
         # Telemetry: token counts from the most recent request (v0.9.0)
         self.last_prompt_tokens   = 0
         self.last_response_tokens = 0
@@ -246,3 +248,43 @@ class OllamaClient:
             return [m["name"] for m in r.json().get("models", [])]
         except Exception:
             return []
+
+    # ─────────────────────────────────────────────────────────────
+    # Phase D — Embeddings (nomic-embed-text by default).
+    #
+    # Degrade gracefully. A missing signal never opens the circuit:
+    # on any failure (Ollama down, model not pulled, HTTP error,
+    # malformed response) this returns None, and the caller is
+    # responsible for substituting a zero-vector or falling back to
+    # exact-match metadata search.
+    # ─────────────────────────────────────────────────────────────
+    def embed(
+        self,
+        text:  str,
+        model: str | None = None,
+    ) -> list[float] | None:
+        """
+        Single-vector embedding via Ollama's /api/embeddings endpoint.
+
+        Args:
+            text:  Text to embed.
+            model: Optional override. Defaults to self.embed_model.
+
+        Returns:
+            list[float] on success; None on any failure.
+        """
+        if not text:
+            return None
+        try:
+            r = requests.post(
+                f"{self.base_url}/api/embeddings",
+                json={"model": model or self.embed_model, "prompt": text},
+                timeout=10,
+            )
+            r.raise_for_status()
+            vec = r.json().get("embedding")
+            if isinstance(vec, list) and vec and all(isinstance(x, (int, float)) for x in vec):
+                return [float(x) for x in vec]
+            return None
+        except Exception:
+            return None
