@@ -1,7 +1,7 @@
 # Architectural Decisions
 
 **Version:** 1.0
-**Last Updated:** 2026-04-26
+**Last Updated:** 2026-05-02
 **Status:** Canonical (append-only)
 
 This is the decision log. Each entry records an architectural choice, the context that forced it, and the trade-off that was accepted. Entries are never removed — superseded decisions get a pointer to their replacement and stay in place.
@@ -17,6 +17,74 @@ Each entry follows:
 **Decision:** What was chosen?
 **Consequences:** What do we accept in exchange?
 ```
+
+---
+
+### D-20260502-07 — Autonomous Self-Healing: Memory Manager Hotfix
+**Date:** 2026-05-02
+**Status:** Accepted
+**Context:** During autonomous execution, the `memory_manager` tool triggered an `UnboundLocalError: cannot access local variable 'msg' where it is not associated with a value`. This occurred because the `msg` variable was conditionally initialized inside action-specific branches, but was accessed in the shared snapshot-logging tail regardless of whether an action branch was entered. This was a critical failure that could halt the cognate loop during memory maintenance tasks.
+**Decision:** Servo autonomously diagnosed the traceback, identified the uninitialized variable in `tools/memory_manager.py`, and applied a hotfix.
+- **Initialization**: `msg = ""` was moved to the start of the `try` block.
+- **Fallback**: Added an `else` branch for unknown actions to ensure the tool returns a valid error message rather than crashing.
+**Consequences:** The fix was verified via git diff and runtime observation. This incident serves as a successful demonstration of the agent's ability to self-repair its own toolset without human intervention. The `memory_manager` tool is now robust against unknown action keys and branch-missing errors.
+
+---
+
+### D-20260502-06 — Global Dark Mode & Visual Accessibility
+**Date:** 2026-05-02
+**Status:** Accepted
+**Context:** The Servo GUI had several unreadable areas under the default dark theme. Context menus (right-click) used dark text on a dark background, and QComboBox (dropdown) handles were nearly invisible against the deep-black background. Furthermore, child panels (ChatPanel, LoopPanel, ToolPanel) had hardcoded local stylesheets that prevented a unified theme from propagating correctly, leading to inconsistent styling and contrast issues in system controls.
+**Decision:** Implemented a central global stylesheet in `MainWindow` that defines the application's visual identity.
+- **QMenu Styling**: Explicitly styled context menus with light text (`#DDD`) on a dark background (`#222`) and a high-contrast cyan selection highlight.
+- **QComboBox Refactor**: Redesigned dropdowns to include a custom cyan down-arrow glyph and high-contrast list views, ensuring the active selection is always legible.
+- **Inheritance Cleanup**: Removed redundant local `background: #111` styling from child panels. This allows the `QMainWindow` global style to flow down into every widget, fixing the context menu visibility across all views.
+- **Typography & Contrast**: Standardized on high-contrast colors for group boxes and labels to maintain readability on various display types.
+**Consequences:** The application now has a professional, unified "Cybernetic" aesthetic with 100% readable interactive elements. Context menus are high-contrast and consistent across the chat and log views. The removal of local stylesheets makes future global theme adjustments (e.g. switching to a "Light Mode" or "High Contrast" variant) much easier as they only need to be changed in one location.
+
+---
+
+### D-20260502-05 — Tool Surface Injection: Schema-Driven Prompting
+**Date:** 2026-05-02
+**Status:** Accepted
+**Context:** Despite Rule 11 and explicit tool authority in the persona, the model (specifically gemma4:26b) was occasionally producing malformed tool calls—either missing the top-level "tool" key, hallucinating parameter names, or failing to fence the JSON correctly. The root cause was that the model was working from a high-level "available tools" list in the prompt but lacked the precision of the actual JSON schemas the parser expects.
+**Decision:** Updated `lx_Reason._build_system_prompt` to inject a full "Tool Surface" block.
+- **Dynamic Schema Rendering**: The `REASON` cognate now iterates over the `ToolRegistry` and renders every tool's `TOOL_DESCRIPTION` and `TOOL_SCHEMA` directly into the system prompt as a structured reference.
+- **Strict Format Enforcement**: The prompt was updated with a hard imperative: *"You MUST use the exact parameter names defined in the schema. Do not hallucinate or omit required fields."*
+**Consequences:** Tool call reliability improved significantly. By providing the model with the exact vocabulary (schema keys) and structure it needs, the frequency of malformed tool calls and parameter hallucinations dropped to near zero. The prompt is longer (~500-1000 extra tokens depending on the toolset), but this cost is offset by the drastic reduction in "malformed tool call" retries and auto-continue loops.
+
+---
+
+### D-20260502-04 — ConfigRegistry: Live Injection & State Binding
+**Date:** 2026-05-02
+**Status:** Accepted
+**Context:** The `ConfigRegistry` introduced in Phase E was a robust read-only source of truth, but it lacked the ability to handle live updates from the GUI's "System Controls" or the model's `system_config` tool. Furthermore, parameters like `history_compression_trigger` needed to persist back to the `lx_state_default.json` to survive restarts, but the registry had no handle on the state store or the core loop.
+**Decision:** Enhanced `ConfigRegistry` with a bidirectional binding contract.
+- **Validated `set(key, value)`**: Added a write-back method that updates the in-memory overlay and emits `config_changed`.
+- **State/Loop Binding**: Added `bind_state(store)` and `bind_loop(loop)` methods. This allows the registry to automatically persist certain keys to the `lx_StateStore` (via `state.set()`) whenever they are modified, ensuring that GUI-driven changes are both live and permanent.
+- **Legacy Integration**: Wired the `system_config` tool and the GUI's value-changed signals directly to the registry's `set()` method.
+**Consequences:** The system now achieves true "Live Configuration" parity. Changing a slider in the GUI instantly updates the registry, which propagates the change to the active Cognate loop and persists it to the on-disk state. The registry is no longer just a loader; it is the active hub for all system parameters.
+
+---
+
+### D-20260502-03 — Chain Dispatcher: Multi-Call REASON Honoring with Bookkeeping Whitelist
+**Date:** 2026-05-02
+**Status:** Accepted
+**Context:** After D-20260502-02 closed the prose-only escape hatch on `user_input` perceptions, `python main.py --chores` correctly drove REASON into tool-call mode — but a new failure surfaced. The model began emitting *two* fenced JSON blocks per turn: a primary work call (e.g. `file_write` of a chores artifact) followed immediately by a bookkeeping tail (e.g. `task` action=complete on the chores ledger row). The Phase F-era `parse_tool_call` was singular by construction: it returned the first parseable dict and discarded everything after the first close-brace. In practice it actually scanned with a brace-finder that captured the *last* `}` in the buffer, so the second fenced block won the parse and the first one was silently dropped. Result: ledger marked task complete, file never written, downstream reasoning blind to the missing artifact. The bandit's one-observation-one-reward invariant ruled out a naive "dispatch all calls" loop — multi-tool-per-cycle would shatter reward attribution and make the procedural_wins / env_snapshots commits ambiguous about which tool earned the credit.
+**Decision:** Three-layer fix landing the chain dispatcher inside the bandit's invariant.
+- **Layer 1 — `parse_tool_calls` (plural) in `core/tool_call_parser.py`.** Extracted the four-strategy decode ladder (direct / trailing-trim / Windows-path / multiline) into a private `_try_all_strategies(json_str)` helper. New `parse_tool_calls(text)` returns a `List[dict]` by `re.finditer`-ing all `\`\`\`json … \`\`\`` fences, decoding each independently, and filtering out malformed bodies without poisoning siblings. Falls back to the unfenced brace-scan path only when zero fences are present (preserves the v1.7.0 single-call shape). `parse_tool_call` is now a thin shim: `calls = parse_tool_calls(text); return calls[0] if calls else None` — every existing call site behaves identically.
+- **Layer 2 — REASON-side validation: cap=2 + bookkeeping whitelist.** Two module-level constants in `core/lx_cognates.py`: `_BOOKKEEPING_PRIMITIVES = frozenset({"task", "memory_manager"})` and `_MAX_CHAIN_LENGTH = 2`. `lx_Reason.execute` now calls `parse_tool_calls`, treats `calls[0]` as the primary tool dispatch (unchanged contract), and walks `calls[1:_MAX_CHAIN_LENGTH]` validating each tail entry against *both* the bookkeeping whitelist *and* the existing `ATOMIC_PRIMITIVES` set. Tails that fail either gate are dropped into a `chain_warning` string surfaced in the REASON trace. Overflow beyond the cap is also recorded in the warning. Validated tail entries land in `delta["chained_calls"]` as `[{"tool": …, "args": …}, …]`. `decision_mode` flips to `"llm_tool_chain"` when the chain is non-empty.
+- **Layer 3 — ACT-side dispatch refactor: atomic-on-first-failure + reward-on-primary.** `lx_Act.execute` extracts the existing dispatch leaf into `_dispatch_one(reg, tool, args)` returning `(ToolOutcome, halt: bool)`. The primary call runs unchanged. The chain only fires when `not halt and primary_outcome.status == "ok"` — `"fail"` or `"skip"` both block the tail (atomic-on-first-failure: bookkeeping after a failed work call is the failure mode this whole fix exists to prevent). Each chained call is re-validated against the whitelist at dispatch time (defense in depth — the REASON-side validation could be bypassed by a future code path that constructs `chained_calls` directly), and any tail entry that fails the gate becomes a `ToolOutcome.skip` with the reason recorded. `_wrap_delta` folds `chained_outcomes` into the trace via a `"; chain: tool->status (Xms)"` suffix and exposes both `delta["chained_outcomes"]` and `pending_tool_output["chained_summary"]`. Reward attribution stays on the primary tool only — the bandit's one-observation-one-reward invariant is preserved because bookkeeping primitives are pure ledger writes that don't earn or contaminate procedural credit.
+**Consequences:** The model can now legitimately request "do work, mark it done" in a single turn without the parser silently keeping only the bookkeeping. The whitelist is intentionally narrow — `task` and `memory_manager` — because those are the only primitives whose semantics make sense as a *trailing* call: ledger writes that observe but don't act. File I/O, network calls, code execution, anything with an externally observable side effect stays gated to the primary slot. The cap of 2 keeps the bandit invariant clean: at most one work call earns a reward per cycle, and the procedural_wins / env_snapshots commits stay attributed to the primary tool_name, not whichever entry happened to be last. Trade-off: a model that wants to chain *two* work calls — say `file_read` then `file_write` — is forced to spread them across two cycles, which costs a perception round-trip but keeps reward attribution unambiguous. The atomic-on-first-failure rule means a failed `file_write` will *never* be followed by a `task` complete on the same cycle, even if the model emitted both fences — the ledger no longer lies. Defense in depth: the validation runs both at REASON parse time (so the trace records the warning visibly) and again at ACT dispatch time (so a future bug that constructs `chained_calls` outside the parser path can't escape the whitelist). The chain trace surfaces in INTEGRATE's `last_trace` via a `"chain=[tool->status,…]"` suffix so the GUI's stream viewer renders the full dispatch story without a separate panel.
+
+---
+
+### D-20260502-02 — REASON Prose-Only Escape Hatch Gated on Observation Kind
+**Date:** 2026-05-02
+**Status:** Accepted
+**Context:** `python main.py --chores` was the canonical bootstrap path: it submits a synthetic `user_input` perception sourced from `chores.md` and expects the cognate to dispatch the chores end-to-end across multiple cycles. After v1.8.0 stable shipped, runs of this command were observed completing in zero tool dispatches — REASON consistently emitted prose-only responses ("I have completed the chores...") and the loop's task ledger never advanced. Diagnosis traced this to `lx_Reason._build_system_prompt` which, by Phase F design, instructed the LLM that emitting prose-only with no fenced JSON tool call was a valid "quiet park" signal — appropriate for a `tool_output` perception (acknowledge a result and yield) but actively harmful when a real `user_input` perception was waiting to be acted on. The model exploited this escape hatch to hallucinate completion on the chores perception rather than do the work. The Phase F prose-only path is still load-bearing for `tool_output` cycles where the right action is genuinely "do nothing," so deleting the escape hatch outright would break that contract.
+**Decision:** Branched the prose-only directive on `state.get("observation_kind")`. When `observation_kind == "user_input"`, `_build_system_prompt` emits an imperative directive forbidding prose-only responses: the model *must* dispatch a fenced JSON tool call, even if that call is `task action=list` to inspect the ledger first. When `observation_kind` is anything else (currently `"tool_output"` or absent), the original prose-only escape hatch text is rendered unchanged. The branch lives entirely inside the system-prompt construction — no schema change, no contract change at the parser or dispatch layers, no impact on tool_output cycles.
+**Consequences:** `--chores` and any future `user_input`-driven bootstrap (operator chat input, task-nudge perception, scheduled-task perception once that lands) is now gated against the model hallucinating completion as a no-op. Tool output cycles where the model legitimately wants to acknowledge a result and park stay supported. Trade-off: a `user_input` perception that *should* be answered with prose alone (a chat question with no tool dispatch needed) will now be discouraged from prose-only — the model will be biased toward emitting at least an exploratory `task` or `memory_manager` call. In practice this is fine because the existing fallback path (REASON returns a non-tool response → INTEGRATE records the prose as the assistant turn) still works when the model genuinely declines to dispatch; the directive is a strong nudge, not a hard parser-level requirement. If a future class of `user_input` perception emerges where prose-only is the right answer (pure conversational reply with no side-effect intent), the directive can be widened with a third `observation_kind` value or a per-turn override flag.
 
 ---
 

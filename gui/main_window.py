@@ -97,7 +97,53 @@ class MainWindow(QMainWindow):
         splitter.setCollapsible(3, False)
 
         self.setCentralWidget(splitter)
-        self.setStyleSheet("QMainWindow { background: #111; }")
+        
+        # Global Theme (D-20260502-02): Ensure context menus and widgets have 
+        # readable contrast in dark mode.
+        self.setStyleSheet("""
+            QMainWindow { background: #111; }
+            QWidget { color: #ccc; font-family: 'Segoe UI', 'Roboto', sans-serif; }
+            
+            /* Context Menus (Right-click) */
+            QMenu {
+                background-color: #252525;
+                color: #eee;
+                border: 1px solid #3a3a3a;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 4px 20px;
+                border-radius: 2px;
+            }
+            QMenu::item:selected {
+                background-color: #00E5FF;
+                color: black;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #333;
+                margin: 4px 8px;
+            }
+            
+            /* ScrollBars */
+            QScrollBar:vertical {
+                background: #111;
+                width: 12px;
+                margin: 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #333;
+                min-height: 20px;
+                border-radius: 6px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #444;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
 
         # Status bar
         sb = QStatusBar()
@@ -113,18 +159,32 @@ class MainWindow(QMainWindow):
         self.model_combo.setStyleSheet("""
             QComboBox {
                 background: #1a1a1a;
-                color: #aaa;
+                color: #00E5FF;
                 border: 1px solid #2a2a2a;
                 border-radius: 4px;
                 padding: 2px 8px;
                 font-size: 11px;
+                font-weight: bold;
             }
-            QComboBox::drop-down { border: none; }
+            QComboBox::drop-down { 
+                border: none; 
+                width: 20px;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 4px solid #00E5FF;
+                width: 0; height: 0;
+                margin-right: 8px;
+            }
             QComboBox QAbstractItemView {
                 background: #1a1a1a;
-                color: #aaa;
+                color: #ccc;
                 border: 1px solid #333;
                 selection-background-color: #2a2a2a;
+                selection-color: #00E5FF;
+                outline: none;
             }
         """)
         self._populate_models()

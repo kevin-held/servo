@@ -32,6 +32,7 @@ def execute(action: str, content: str = "", *, conn_factory=None, tool_context=N
         if callable(ctx_factory):
             conn_factory = ctx_factory
     conn = None
+    msg = ""
     try:
         if conn_factory is not None:
             conn = conn_factory()
@@ -88,6 +89,8 @@ def execute(action: str, content: str = "", *, conn_factory=None, tool_context=N
         elif action == "overwrite":
             new_mem = content
             msg = "Successfully OVERWRITTEN working memory."
+        else:
+            msg = f"No action performed (unknown action: {action})."
             
         conn.execute("INSERT OR REPLACE INTO state (key, value) VALUES (?, ?)", ("working_memory", new_mem))
         conn.commit()

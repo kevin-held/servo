@@ -31,6 +31,8 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
+from core.identity import get_system_defaults
+
 _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
 
@@ -48,7 +50,7 @@ class ConfigRegistry:
         sim = cfg.get("nn_similarity_floor", 0.5)  # caller default overrides _DEFAULTS
 
     Thread-safety: single-threaded by design. ServoCore instantiates one
-    registry at __init__ and passes references. The dict is not mutated
+    registry and passes references. The dict is not mutated
     after reload(); callers read values rather than holding references to
     the underlying store.
     """
@@ -71,22 +73,38 @@ class ConfigRegistry:
         # parameter default on the method in lx_state.py).
         "nn_similarity_floor": 0.7,
         # Phase G (UPGRADE_PLAN_6 sec 3f) -- env_snapshots similarity floor.
-        # Looser than nn_similarity_floor by design: env_snapshots index
-        # the env_audit fingerprint rather than the prose observation
-        # signature, so semantic matches are coarser by construction.
-        # 0.6 keeps cold-start lookups productive without admitting the
-        # 'everything is similar' regime that lower floors invite under
-        # cosine distance on high-dim sparse vectors.
         "env_snapshot_similarity_floor": 0.6,
         # OllamaClient embed model (was a literal __init__ default).
-        # Swapping this at runtime requires the procedural_wins collection
-        # to be empty or to share the new dim with the old -- see the
-        # _EMBED_DIM comment in lx_state.py for migration discipline.
         "embed_model":         "nomic-embed-text",
-        # lx_Observe root set (was _OBSERVE_ROOTS on the class). Stored as
-        # a list in JSON; callers that want a tuple should convert on read.
+        # lx_Observe root set (was _OBSERVE_ROOTS on the class).
         "observe_roots":       ["core", "gui", "tools", "codex"],
     }
+
+    # Type map for casting values written via set()
+    _TYPE_MAP: dict = {
+        "temperature": float,
+        "max_tokens": int,
+        "conversation_history": int,
+        "chain_limit": int,
+        "autonomous_loop_limit": int,
+        "max_auto_continues": int,
+        "history_compression_trigger": float,
+        "history_compression_target_chars": int,
+        "tool_result_compression_threshold": int,
+        "tool_result_compression_target_chars": int,
+        "hardware_throttle_threshold_enter": float,
+        "hardware_throttle_threshold_exit": float,
+        "stream_enabled": bool,
+        "hardware_throttling_enabled": bool,
+        "summarize_contextualize": bool,
+        "summarize_history_integrate": bool,
+        "summarize_tool_results": bool,
+        "summarize_read_enabled": bool,
+        "summarize_read_threshold": int,
+        "verbosity": str,
+    }
+
+    _VERBOSITY_OPTIONS = {"Concise", "Normal", "Standard", "Detailed"}
 
     def __init__(self, path: Optional[Path] = None):
         """Read config.json once. Defaults are installed first so a failed
@@ -101,12 +119,29 @@ class ConfigRegistry:
         # Phase F (UPGRADE_PLAN_5 sec 8) -- track the last seen mtime so
         # `maybe_reload()` can decide cheaply whether the file has
         # changed since the previous reload. None signals "never seen".
-        # _last_reload_count is a simple counter incremented on every
-        # successful reload; tests assert against it to confirm a
-        # reload actually fired without depending on mtime granularity.
         self._last_mtime_ns: Optional[int] = None
         self._last_reload_count: int = 0
         self.reload()
+
+        # Optional references wired post-construction so set() can
+        # persist values and live-inject into the loop.
+        self._state = None
+        self._loop_ref = None
+
+        # Bounds from system_defaults.json
+        self._bounds = get_system_defaults().get("bounds", {})
+
+    # ------------------------------------------------------------------
+    # Binding helpers -- wired by ServoCoreThread after construction.
+    # ------------------------------------------------------------------
+
+    def bind_state(self, state) -> None:
+        """Wire a StateStore for set() persistence."""
+        self._state = state
+
+    def bind_loop(self, loop) -> None:
+        """Wire a loop reference for live memory injection."""
+        self._loop_ref = loop
 
     def reload(self) -> None:
         """Re-read config.json. Silently degrades to defaults on any
@@ -125,43 +160,22 @@ class ConfigRegistry:
             raw = self._path.read_text(encoding="utf-8")
             overlay = json.loads(raw)
             if isinstance(overlay, dict):
-                # Update in place; keys not in overlay keep their value.
                 for key, value in overlay.items():
                     self._values[key] = value
-                # Successful overlay -- bump counter for tests/telemetry
-                # and refresh the mtime cache so the next maybe_reload
-                # has a current baseline. We refresh inside the success
-                # branch so a malformed file doesn't poison the cache.
                 self._last_reload_count += 1
                 try:
                     self._last_mtime_ns = self._path.stat().st_mtime_ns
                 except OSError:
-                    # Defensive: a race where the file is unlinked between
-                    # read and stat. Leave _last_mtime_ns at its prior
-                    # value so the next maybe_reload re-detects.
                     pass
         except Exception:
-            # Never raise on bad config. A broken config.json is a
-            # deployment accident, not a loop-stopping condition. The
-            # registry falls back to whatever state it was in before
-            # (defaults on first call; last-good on subsequent calls).
             return
 
     def maybe_reload(self) -> bool:
         """Re-read config.json iff its mtime changed since the last
         successful reload.
 
-        Phase F (UPGRADE_PLAN_5 sec 8) -- the cognate loop calls this at
-        the top of every cycle so a config edit lands within one cycle
-        of save without restarting the engine. The check is one stat()
-        call per cycle, which is cheap relative to env_audit's tree
-        walk.
-
         Returns True if a reload fired (mtime changed and file was
-        readable), False otherwise (file missing, mtime unchanged, or
-        stat failed). Callers do not need to inspect the return; it
-        exists for telemetry and for a future watchdog that wants to
-        log config changes.
+        readable), False otherwise.
         """
         try:
             if not self._path.exists():
@@ -171,18 +185,9 @@ class ConfigRegistry:
             return False
         if self._last_mtime_ns is not None and current_mtime == self._last_mtime_ns:
             return False
-        # mtime changed (or first observation). Delegate to reload(),
-        # which handles the JSON parse + cache update. We compare the
-        # reload counter before and after to confirm whether the
-        # reload actually applied -- a mtime bump on a file that turns
-        # out to be malformed JSON should leave the registry alone but
-        # still update _last_mtime_ns so we don't retry every cycle.
         prior_count = self._last_reload_count
         self.reload()
         if self._last_reload_count == prior_count:
-            # The overlay parse failed. Update _last_mtime_ns so we
-            # don't loop on the same broken file every cycle. The
-            # registry retains its last-good values.
             self._last_mtime_ns = current_mtime
             return False
         return True
@@ -195,19 +200,105 @@ class ConfigRegistry:
           2. _DEFAULTS (if key present)
           3. Caller-supplied `default` argument
           4. None
-
-        The caller-supplied default takes precedence over None but never
-        over _DEFAULTS, so a typo in the config.json key doesn't silently
-        override a known default with the caller's fallback. If you want
-        caller-default to win over registry-default, either add the key to
-        _DEFAULTS first or use `get_raw` (absent -- intentionally, to
-        discourage the pattern).
         """
         if key in self._values:
             return self._values[key]
         if key in self._DEFAULTS:
             return self._DEFAULTS[key]
         return default
+
+    # ------------------------------------------------------------------
+    # set() -- validates, persists, and live-injects a config value.
+    # Compatible with the contract system_config.py expects.
+    # ------------------------------------------------------------------
+
+    def set(self, key: str, value: Any, loop_ref=None) -> str:
+        """Validate and persist a configuration change.
+
+        Parameters
+        ----------
+        key : str
+            The parameter name.
+        value : Any
+            The new value (will be cast to the expected type).
+        loop_ref : optional
+            A loop reference for live memory injection. Falls back to
+            the bound loop if not provided.
+        """
+        try:
+            val = self._cast_value(key, value)
+
+            # Bounds check
+            if key in self._bounds:
+                bounds_pair = self._bounds[key]
+                if isinstance(bounds_pair, list) and len(bounds_pair) == 2:
+                    lo, hi = float(bounds_pair[0]), float(bounds_pair[1])
+                    # Allow dynamic overrides from state
+                    if self._state is not None:
+                        try:
+                            lo = float(self._state.get(f"bound_min_{key}", str(lo)))
+                            hi = float(self._state.get(f"bound_max_{key}", str(hi)))
+                        except (TypeError, ValueError):
+                            pass
+                    if isinstance(val, (int, float)) and not (lo <= val <= hi):
+                        return f"Error: {key} out of bounds ({lo}-{hi}). Received {val}."
+
+            # Enum validation
+            if key == "verbosity" and val not in self._VERBOSITY_OPTIONS:
+                return f"Error: verbosity must be one of {self._VERBOSITY_OPTIONS}."
+
+            # Persist to state store
+            if self._state is not None:
+                try:
+                    self._state.set(key, str(val))
+                except Exception:
+                    pass
+
+            # Update in-memory overlay so subsequent get() calls see it
+            self._values[key] = val
+
+            # Live injection into the loop
+            ref = loop_ref or self._loop_ref
+            if ref is not None:
+                self._apply_to_memory(ref, key, val)
+
+            return f"✓ {key} calibrated to {val}"
+        except Exception as e:
+            return f"Error calibrating {key}: {e}"
+
+    def _cast_value(self, key: str, value: Any) -> Any:
+        """Coerce a value to the expected type for `key`."""
+        if value is None:
+            return None
+        target = self._TYPE_MAP.get(key)
+        if target is None:
+            return value
+        if target == bool:
+            if isinstance(value, bool):
+                return value
+            return str(value).lower() in ("true", "1", "yes", "on")
+        if target == float:
+            return float(value)
+        if target == int:
+            return int(float(value))
+        return str(value)
+
+    def _apply_to_memory(self, loop, key: str, value: Any) -> None:
+        """Route a validated value to the correct in-memory attribute."""
+        ollama = getattr(loop, "ollama", None)
+        if key == "temperature" and ollama is not None:
+            ollama.temperature = value
+        elif key == "max_tokens" and ollama is not None:
+            ollama.num_predict = value
+        elif hasattr(loop, key):
+            setattr(loop, key, value)
+
+        # Emit signal for GUI sync
+        if hasattr(loop, "config_changed"):
+            try:
+                loop.config_changed.emit(key, value)
+            except Exception:
+                pass
 
     def as_dict(self) -> dict:
         """Return a shallow copy of the current overlay state.

@@ -13,7 +13,7 @@ TOOL_DESCRIPTION = ("Fetch the transcript of a YouTube video. Supports paginatio
                     "to traverse long transcripts.")
 TOOL_ENABLED     = True
 TOOL_SCHEMA      = {
-    "video":        {"type": "string", "description": "YouTube video URL or 11-char ID."},
+    "url":          {"type": "string", "description": "YouTube video URL or 11-char ID."},
     "language":     {"type": "string", "description": "ISO 639-1 language code preference."},
     "save_to":      {"type": "string", "description": "Project-relative path to save the full transcript."},
     "max_chars":    {"type": "integer", "description": "Cap the returned text (default 12000)."},
@@ -29,15 +29,16 @@ def _extract_video_id(s: str) -> str:
     m = _ID_RE.search(s)
     return m.group(1) if m else ""
 
-def execute(video: str, language: str = "en", save_to: str = "", max_chars: int = 12000, block: int = 0) -> str:
+def execute(url: str = "", video: str = "", language: str = "en", save_to: str = "", max_chars: int = 12000, block: int = 0) -> str:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError:
         return "Error: youtube-transcript-api is not installed. Run 'pip install youtube-transcript-api' to enable this tool."
 
-    video_id = _extract_video_id(video)
+    # Accept both 'url' (canonical) and 'video' (legacy) param names
+    video_id = _extract_video_id(url or video)
     if not video_id:
-        return f"Error: invalid video id {video!r}"
+        return f"Error: invalid video id {(url or video)!r}"
 
     save_path = None
     if save_to:

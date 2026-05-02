@@ -127,7 +127,8 @@ class ChatPanel(QWidget):
         layout.addLayout(row)
 
 
-        self.setStyleSheet("QWidget { background: #111; }")
+        # Removed local background: #111 to allow global QMainWindow styling to propagate.
+        # The child widgets (output, input_field) still have their specific styling.
 
     # ── Private ───────────────────────────────────
 

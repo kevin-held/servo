@@ -256,7 +256,7 @@ class ToolPanel(QWidget):
 
         layout.addStretch(1)
 
-        self.setStyleSheet("QWidget { background: #111; }")
+        # Removed local background: #111 to allow global QMainWindow styling to propagate.
 
     # ---- Population --------------------------
 

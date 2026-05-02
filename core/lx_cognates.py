@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from core.lx_outcomes import ToolOutcome
-from core.tool_call_parser import parse_tool_call, strip_tool_calls
+from core.tool_call_parser import parse_tool_call, parse_tool_calls, strip_tool_calls
 from benchmark.criteria.lx_lexicon import FAIL_PATTERNS
 
 
@@ -47,6 +47,9 @@ ATOMIC_PRIMITIVES = (
     # Phase D additions -- TOOL_IS_SYSTEM tools rewired via lx_loop_shim.
     "task", "system_config", "context_dump",
     "memory_manager", "memory_snapshot",
+    # Remaining functional tools
+    "fetch_url", "log_query", "log_summarizer",
+    "screenshot", "shell_exec", "web_search", "youtube_transcript",
 )
 
 
@@ -74,6 +77,38 @@ _MEMORY_TOOLS = frozenset({
 # tool to this set requires that tool's execute() to declare
 # `tool_context=None` as a keyword-only arg (see Phase F Step 2 work).
 _CONTEXT_TOOLS = _MEMORY_TOOLS | frozenset({"system_config"})
+
+
+# v1.8.1 (D-20260502-01) -- chain dispatch surface.
+#
+# REASON sometimes emits two fenced JSON tool calls in one response when
+# the natural pattern is "do work, then mark complete" (e.g. file_write
+# followed by task(action='complete')). Pre-1.8.1 the parser kept only
+# one call and ACT dispatched only that one, which silently dropped the
+# work call and let the bookkeeping call mark a task complete that was
+# never actually executed.
+#
+# v1.8.1 honors the chain with three guardrails so the bandit's one-
+# observation-one-reward invariant survives:
+#
+#   1. Hard cap at _MAX_CHAIN_LENGTH = 2. The cycle is still "one
+#      observation -> one transition" for procedural_wins / env_snapshots
+#      bookkeeping; the second call is parasitic on the first.
+#
+#   2. The tail (call index 1) MUST be a bookkeeping primitive --
+#      pure ledger writes that don't reach into the world, can't blow up
+#      context, and don't change what REASON sees on the next cycle in
+#      a way that would invalidate the first call's tool_output.
+#      Anything else as the tail is dropped and a warning is appended
+#      to reason_text so the model knows on the next cycle.
+#
+#   3. Atomic-on-first-failure. If the primary call fails (raises,
+#      returns "Error in <tool>:", or trips the lexicon gate), the chain
+#      tail is dropped before dispatch -- the bookkeeping call was
+#      predicated on success and running it anyway would re-create the
+#      "ledger lies" failure mode this fix exists to prevent.
+_BOOKKEEPING_PRIMITIVES = frozenset({"task", "memory_manager"})
+_MAX_CHAIN_LENGTH = 2
 
 
 # Phase G (UPGRADE_PLAN_6 sec 3e) -- the static cold-start lookup table
@@ -313,12 +348,26 @@ class lx_Observe(Cognate):
         active_tasks = []
         working_memory = ""
         recent_turns = []
+        prior_summary = ""
         store = getattr(self.core, "_active_store", None)
         if store is not None:
             if hasattr(store, "query_turns"):
-                # limit=15 to match the old default conversation_history
-                recent_turns = store.query_turns(limit=15)
+                # Use dynamic limit from config if available
+                history_cap = 15
+                cfg = getattr(self.core, "config", None)
+                if cfg:
+                    history_cap = int(cfg.get("conversation_history", history_cap))
+                elif hasattr(store, "get"):
+                    history_cap = int(store.get("conversation_history", history_cap))
+                
+                recent_turns = store.query_turns(limit=history_cap)
                 recent_turns.reverse()  # Chronological order
+                
+            if hasattr(store, "get_latest_conversation_summary"):
+                s_dict = store.get_latest_conversation_summary()
+                if s_dict:
+                    prior_summary = s_dict.get("summary", "")
+                    
             state_dir = getattr(store, "_state_dir", None)
             if state_dir is not None:
                 import sqlite3
@@ -356,6 +405,7 @@ class lx_Observe(Cognate):
             "active_tasks": active_tasks,
             "working_memory": working_memory,
             "recent_turns": recent_turns,
+            "prior_summary": prior_summary,
             # Always clear the cross-cycle slot. ACT writes it on the
             # NEXT cycle if its dispatch lands; we never want a stale
             # tool_output to ride more than one OBSERVE.
@@ -529,12 +579,19 @@ class lx_Reason(Cognate):
                 except Exception:
                     pass
 
-            parsed = parse_tool_call(response_text) if response_text else None
+            # v1.8.1 (D-20260502-01) -- multi-call parse + chain
+            # validation. parse_tool_calls returns every fenced-JSON
+            # call in emission order; we honor up to _MAX_CHAIN_LENGTH
+            # of them iff the tail is a bookkeeping primitive.
+            calls = parse_tool_calls(response_text) if response_text else []
             prose = strip_tool_calls(response_text) if response_text else ""
 
-            if parsed:
-                tool_name = parsed.get("tool")
-                args = parsed.get("args") or {}
+            chained_calls: list = []
+            chain_warning: str = ""
+            if calls:
+                primary = calls[0]
+                tool_name = primary.get("tool")
+                args = primary.get("args") or {}
                 if not isinstance(args, dict):
                     args = {}
                 # Backfill safe defaults for an LLM that emitted a tool
@@ -543,8 +600,54 @@ class lx_Reason(Cognate):
                 # required args.
                 if not args:
                     args = self._default_args_for(tool_name) or {}
-                decision_mode = "llm_tool"
-                plan_text = f"dispatch {tool_name} (mode=llm_tool)"
+
+                # Chain validation. We allow up to _MAX_CHAIN_LENGTH-1
+                # tail calls (so 1 with the cap of 2). Tail calls must
+                # be bookkeeping primitives; non-bookkeeping tails are
+                # dropped and a warning is folded into reason_text so
+                # the model can self-correct next cycle.
+                tail = calls[1:_MAX_CHAIN_LENGTH]
+                dropped: list = []
+                for c in tail:
+                    t = c.get("tool")
+                    a = c.get("args") or {}
+                    if not isinstance(a, dict):
+                        a = {}
+                    if t in _BOOKKEEPING_PRIMITIVES and t in ATOMIC_PRIMITIVES:
+                        chained_calls.append({"tool": t, "args": a})
+                    else:
+                        dropped.append(t)
+                # Anything beyond the cap is dropped silently for the
+                # bandit's sake -- it gets surfaced through the warning
+                # so REASON can re-emit on the next cycle.
+                overflow = calls[_MAX_CHAIN_LENGTH:]
+                if dropped or overflow:
+                    bits = []
+                    if dropped:
+                        bits.append(
+                            "dropped non-bookkeeping tail call(s): "
+                            + ", ".join(str(d) for d in dropped)
+                        )
+                    if overflow:
+                        bits.append(
+                            f"dropped {len(overflow)} call(s) beyond "
+                            f"chain cap (_MAX_CHAIN_LENGTH="
+                            f"{_MAX_CHAIN_LENGTH})"
+                        )
+                    chain_warning = "; ".join(bits)
+
+                if chained_calls:
+                    decision_mode = "llm_tool_chain"
+                    chain_desc = " + ".join(
+                        c["tool"] for c in chained_calls
+                    )
+                    plan_text = (
+                        f"dispatch {tool_name} -> {chain_desc} "
+                        f"(mode=llm_tool_chain)"
+                    )
+                else:
+                    decision_mode = "llm_tool"
+                    plan_text = f"dispatch {tool_name} (mode=llm_tool)"
             elif response_text:
                 tool_name = None
                 args = {}
@@ -564,17 +667,22 @@ class lx_Reason(Cognate):
                 )
                 prose = ""
 
+            trace_text = f"REASON: {plan_text}"
+            if chain_warning:
+                trace_text += f" | chain_warning: {chain_warning}"
             return {
                 "current_step": "ACT",
                 "plan": plan_text,
                 "planned_tool": tool_name,
                 "planned_args": args,
+                "chained_calls": chained_calls,
+                "chain_warning": chain_warning,
                 "decision_mode": decision_mode,
                 "epsilon": round(epsilon, 4),
                 "bandit_top_k": list(top_k),
                 "response_text": prose,
                 "reason_text": response_text,
-                "last_trace": f"REASON: {plan_text}",
+                "last_trace": trace_text,
             }
 
         # 5. No-ollama fallback -- preserve the Phase E bandit behaviour
@@ -597,6 +705,11 @@ class lx_Reason(Cognate):
             "plan": plan_text,
             "planned_tool": tool_name,
             "planned_args": args,
+            # Bandit fallback never chains -- the bandit emits one
+            # primitive per cycle. Empty list keeps the ACT-side
+            # state.get("chained_calls") read defensive.
+            "chained_calls": [],
+            "chain_warning": "",
             "decision_mode": decision_mode,
             "epsilon": round(epsilon, 4),
             "bandit_top_k": list(top_k),
@@ -611,20 +724,27 @@ class lx_Reason(Cognate):
         """Construct the system prompt for the LLM-driven REASON call.
 
         Surfaces:
-          - The atomic primitive surface (the eleven tools the dispatch
-            registry will actually run).
+          - The full tool registry with descriptions and argument schemas
+            so the model knows exactly how to call each tool.
           - The bandit top-k as a non-binding hint -- "these have done
             well on similar observations recently."
           - The fenced-JSON tool-call schema so parse_tool_call can
             extract a call from the response.
-          - Permission to emit prose only when no action is needed.
+          - A conditional action directive: when observation_kind is
+            "user_input" the LLM is *forbidden* from emitting prose
+            only -- the first emission must contain a tool call. On
+            tool_output (and the empty first cycle) the prose-only
+            escape hatch is restored so REASON can quietly park.
 
         The top_k list is ordered most-to-least promising. An empty
         list means the bandit had no usable history; the prompt still
         lists the atomic surface so the LLM has a vocabulary to pick
         from.
         """
-        primitives = ", ".join(ATOMIC_PRIMITIVES)
+        # Build the full tool surface with descriptions + schemas.
+        # Falls back to bare tool names if the registry is unavailable.
+        tools_block = self._render_tool_surface()
+
         if top_k:
             hint_lines = "\n".join(f"  - {t}" for t in top_k)
             hint_block = (
@@ -658,26 +778,104 @@ class lx_Reason(Cognate):
         if working_memory:
             memory_block = f"\n[EPISODIC MEMORY]\n{working_memory}\n"
 
+        prior_summary = state.get("prior_summary", "")
+        summary_block = ""
+        if prior_summary:
+            summary_block = f"\n[PRIOR CONTEXT]\n{prior_summary}\n"
+
+        # v1.8.1: Tighten REASON's prose-only escape hatch so it cannot
+        # be taken when a fresh user_input perception is on the wire.
+        # Without this gate the LLM was choosing the prose path on
+        # `--chores` startup -- hallucinating a completion summary
+        # instead of dispatching the chores ledger's tool calls.
+        observation_kind = state.get("observation_kind") or ""
+        if observation_kind == "user_input":
+            action_directive = (
+                "A user_input perception is active. Your first emission "
+                "MUST contain a tool call (a fenced JSON block as shown "
+                "above). Do not summarize work you have not performed. "
+                "Do not emit prose-only when the user has just spoken; "
+                "the loop will treat that as a no-op. If the user's "
+                "request requires multiple steps, register them with "
+                "the `task` primitive before doing anything else."
+            )
+        else:
+            action_directive = (
+                "If you have nothing to do, emit prose only and no JSON "
+                "block; the loop will park until new perception arrives."
+            )
+
         return (
             "You are the REASON cognate of a Servo Core agent. Your job "
             "each cycle is to look at the current observation and decide "
             "whether to call a tool, respond with prose, or both.\n\n"
-            f"Atomic primitive surface (these are the tools that will "
-            f"actually dispatch): {primitives}.\n\n"
+            "[PATH DISCIPLINE]\n"
+            "All path arguments to tools are PROJECT-ROOT-RELATIVE using "
+            "forward slashes. Never emit drive letters or leading slashes.\n"
+            "  CORRECT:   codex/manifests/decisions.md, workspace/notes.md\n"
+            "  REJECTED:  C:/Users/.../file.txt, /home/.../file.py\n\n"
+            f"[AVAILABLE TOOLS]\n{tools_block}\n\n"
             f"{hint_block}\n"
             f"{tasks_block}"
-            f"{memory_block}\n"
+            f"{memory_block}"
+            f"{summary_block}\n"
             "To call a tool, emit a fenced JSON block like:\n"
             "```json\n"
-            '{\"tool\": \"<primitive>\", \"args\": {<arg>: <value>, ...}}\n'
+            '{\"tool\": \"<tool_name>\", \"args\": {<arg>: <value>, ...}}\n'
             "```\n"
-            "If you have nothing to do, emit prose only and no JSON "
-            "block; the loop will park until new perception arrives. "
+            f"{action_directive} "
             "If you want to both speak to the user and call a tool, "
             "include both prose and the fenced JSON. Keep prose "
             "concise -- the lexicon gate rejects apologetic or filler "
             "phrasing."
         )
+
+    def _render_tool_surface(self) -> str:
+        """Render the full tool registry as a prompt block with
+        descriptions and argument schemas.
+
+        Falls back to a bare comma-separated name list if the registry
+        is unavailable (e.g. headless test without tools/).
+        """
+        try:
+            # Reach into lx_Act's lazy-loaded registry to avoid
+            # constructing a second ToolRegistry.
+            act_cognate = self.core.registry.get("ACT")
+            if act_cognate is None:
+                return ", ".join(ATOMIC_PRIMITIVES)
+            reg = act_cognate._get_registry()
+            if reg is None or not hasattr(reg, "get_tool_descriptions"):
+                return ", ".join(ATOMIC_PRIMITIVES)
+
+            descs = reg.get_tool_descriptions()
+            lines = []
+            for t in descs:
+                if not t.get("enabled"):
+                    continue
+                name = t["name"]
+                if name not in ATOMIC_PRIMITIVES:
+                    continue
+                desc = t.get("description", "")
+                schema = t.get("schema", {})
+                # Compact arg rendering: name(type) for each arg
+                arg_parts = []
+                for arg_name, arg_def in schema.items():
+                    arg_type = arg_def.get("type", "string") if isinstance(arg_def, dict) else "string"
+                    arg_desc = arg_def.get("description", "") if isinstance(arg_def, dict) else ""
+                    arg_parts.append(f"{arg_name}({arg_type}): {arg_desc}")
+                args_str = "; ".join(arg_parts) if arg_parts else "no args"
+                lines.append(f"  {name}: {desc}\n    Args: {args_str}")
+
+            if not lines:
+                return ", ".join(ATOMIC_PRIMITIVES)
+            return "\n".join(lines)
+        except Exception:
+            return ", ".join(ATOMIC_PRIMITIVES)
+
+    def _truncate_history(self, text: str, max_chars: int = 1500) -> str:
+        if not text or len(text) <= max_chars:
+            return text
+        return text[:max_chars] + f"\n...[Truncated {len(text) - max_chars} chars for history context limits]"
 
     def _build_user_message(self, state: dict, last_outcome: dict) -> str:
         """Render the perception payload as a user message.
@@ -705,15 +903,17 @@ class lx_Reason(Cognate):
                 perc = turn.get("perception_text")
                 if perc:
                     k = turn.get("observation_kind", "")
+                    trunc_perc = self._truncate_history(perc, 1500)
                     if k == "user_input":
-                        chunks.append(f"[USER]\n{perc}")
+                        chunks.append(f"[USER]\n{trunc_perc}")
                     elif k == "tool_output":
-                        chunks.append(f"[TOOL_OUTPUT]\n{perc}")
+                        chunks.append(f"[TOOL_OUTPUT]\n{trunc_perc}")
                     else:
-                        chunks.append(f"[PERCEPTION]\n{perc}")
+                        chunks.append(f"[PERCEPTION]\n{trunc_perc}")
                 resp = turn.get("response_text")
                 if resp:
-                    chunks.append(f"[SERVO]\n{resp}")
+                    trunc_resp = self._truncate_history(resp, 1500)
+                    chunks.append(f"[SERVO]\n{trunc_resp}")
 
         perception = state.get("perception_text")
         kind = state.get("observation_kind") or ""
@@ -1009,39 +1209,78 @@ class lx_Act(Cognate):
             outcome = ToolOutcome.skip(tool, "tool registry unavailable")
             return self._wrap_delta(outcome, halt=False)
 
-        # Phase F (UPGRADE_PLAN_5 sec 7) -- inject a ToolContext for the
-        # five sys-tools that accept it. The context carries:
-        #   - conn_factory     -> Cognate-owned lx_memory.db (Phase E
-        #                         memory-routing surface, no longer
-        #                         dependent on the shim's sqlite3
-        #                         monkey-patch).
-        #   - legacy_loop_ref  -> a LxLoopAdapter that satisfies the
-        #                         `loop.state` / `loop.config` /
-        #                         `loop.telemetry` reads system_config
-        #                         and context_dump perform under
-        #                         headless dispatch. This replaces the
-        #                         shim's `_get_loop_ref` rewrite, which
-        #                         is being retired in this step.
-        #   - state, config, ollama -> direct handles for any future
-        #                         tool that wants them without going
-        #                         through the adapter.
-        # `args` is a per-call dict, so mutation here doesn't pollute
-        # the default-args dict on the class.
+        # Primary dispatch (the work call).
+        outcome, halt = self._dispatch_one(reg, tool, args)
+
+        # v1.8.1 (D-20260502-01) -- chain dispatch.
+        # Iterate REASON's chained_calls (already validated to be
+        # bookkeeping primitives by the chain-validation block in
+        # lx_Reason.execute). Atomic-on-first-failure: if the primary
+        # call did not return status="ok" (i.e. status is "fail" or
+        # "skip") or tripped the lexicon gate, the tail is dropped
+        # before dispatch -- the bookkeeping call was predicated on
+        # success, and running it anyway re-creates the "ledger lies"
+        # failure mode. A halted primary also stops the chain because
+        # run_cycle is about to break the loop.
+        chained_outcomes: list = []
+        chain_halt = False
+        if not halt and outcome.status == "ok":
+            for c in (state.get("chained_calls") or []):
+                c_tool = c.get("tool")
+                c_args = c.get("args") or {}
+                if not isinstance(c_args, dict):
+                    c_args = {}
+                # Re-validate at dispatch time -- defense in depth in
+                # case a future REASON path skips the validation block.
+                if c_tool not in _BOOKKEEPING_PRIMITIVES or c_tool not in ATOMIC_PRIMITIVES:
+                    chained_outcomes.append(
+                        ToolOutcome.skip(
+                            c_tool or "<none>",
+                            f"chain tail rejected: '{c_tool}' not a bookkeeping primitive",
+                        )
+                    )
+                    continue
+                c_outcome, c_halt = self._dispatch_one(reg, c_tool, c_args)
+                chained_outcomes.append(c_outcome)
+                if c_halt:
+                    # A halted bookkeeping call shouldn't normally
+                    # happen (task/memory_manager output is structured
+                    # JSON with no apologetic prose), but if it does
+                    # we propagate halt so the loop can break.
+                    chain_halt = True
+                    break
+
+        return self._wrap_delta(
+            outcome, halt=halt or chain_halt,
+            chained_outcomes=chained_outcomes,
+        )
+
+    def _dispatch_one(self, reg, tool: str, args: dict):
+        """Dispatch a single tool call through the registry.
+
+        Returns (ToolOutcome, halt: bool). `halt` is True iff the
+        lexicon gate matched the raw output. This is the leaf call
+        used by both the primary dispatch and the chain loop in
+        execute(), extracted so v1.8.1's chain dispatcher doesn't
+        duplicate the ToolContext-injection / latency-measurement /
+        lexicon-gate code.
+        """
+        # Phase F (UPGRADE_PLAN_5 sec 7) -- inject a ToolContext for
+        # the five sys-tools that accept it (see _build_tool_context
+        # for the field-by-field rationale). `args` is a per-call
+        # dict, so mutation here doesn't pollute the default-args
+        # dict on the class.
         if tool in _CONTEXT_TOOLS and "tool_context" not in args:
             ctx = self._build_tool_context()
             if ctx is not None:
                 args = {**args, "tool_context": ctx}
                 # Memory tools also accept a bare conn_factory kwarg
-                # for Phase E back-compat. We keep injecting it so a
-                # future cognate that bypasses tool_context (or a
-                # standalone test that constructs args directly) still
-                # gets DB routing for free. The tool resolution order
+                # for Phase E back-compat. The tool resolution order
                 # picks explicit conn_factory FIRST, then ctx.conn_factory.
                 if tool in _MEMORY_TOOLS and "conn_factory" not in args:
                     if callable(ctx.conn_factory):
                         args = {**args, "conn_factory": ctx.conn_factory}
 
-        # Dispatch with latency measurement.
         t0 = time.perf_counter()
         try:
             raw_output = reg.execute(tool, args)
@@ -1059,18 +1298,41 @@ class lx_Act(Cognate):
         # so a successful tool that returned apologetic text also trips.
         halt = bool(_LEXICON_RE.search(raw_output or ""))
 
-        return self._wrap_delta(outcome, halt=halt)
+        return outcome, halt
 
     # -- Internals --
 
-    def _wrap_delta(self, outcome: ToolOutcome, halt: bool) -> dict:
+    def _wrap_delta(
+        self,
+        outcome: ToolOutcome,
+        halt: bool,
+        chained_outcomes: Optional[list] = None,
+    ) -> dict:
+        chained_outcomes = chained_outcomes or []
+        # Compose the trace. Primary outcome is always rendered; chain
+        # outcomes append in order so the log makes the sequence
+        # unambiguous.
+        trace = (
+            f"ACT: {outcome.tool_name} -> {outcome.status} "
+            f"({outcome.latency_ms:.1f}ms)"
+        )
+        if chained_outcomes:
+            tail_bits = []
+            for co in chained_outcomes:
+                tail_bits.append(
+                    f"{co.tool_name} -> {co.status} ({co.latency_ms:.1f}ms)"
+                )
+            trace += "; chain: " + " -> ".join(tail_bits)
+
         delta = {
             "current_step": "INTEGRATE",
             "last_outcome": outcome.to_dict(),
-            "last_trace": (
-                f"ACT: {outcome.tool_name} -> {outcome.status} "
-                f"({outcome.latency_ms:.1f}ms)"
-            ),
+            # v1.8.1 (D-20260502-01) -- expose chain outcomes to
+            # INTEGRATE for trace + future regression guards. Reward
+            # attribution stays on `last_outcome` (the primary call);
+            # chained outcomes are bookkeeping and don't earn rewards.
+            "chained_outcomes": [co.to_dict() for co in chained_outcomes],
+            "last_trace": trace,
         }
         # Phase F (UPGRADE_PLAN_5 sec 6) -- write pending_tool_output so
         # the NEXT OBSERVE turns this dispatch result into a perception
@@ -1087,13 +1349,27 @@ class lx_Act(Cognate):
         )
         if not skip_followup:
             tool_result = outcome.to_dict()
-            delta["pending_tool_output"] = {
+            pto = {
                 "kind": "tool_output",
                 "tool_result": tool_result,
                 "tool_name": outcome.tool_name,
                 "status": outcome.status,
                 "timestamp": time.time(),
             }
+            # v1.8.1 -- when a chain dispatched, attach a brief summary
+            # of the bookkeeping outcomes so the next cycle's REASON
+            # user_message can mention them. The full outcome dicts go
+            # under chained_outcomes; this list is a one-line-per-call
+            # summary suitable for prompt injection.
+            if chained_outcomes:
+                pto["chained_summary"] = [
+                    {
+                        "tool_name": co.tool_name,
+                        "status": co.status,
+                    }
+                    for co in chained_outcomes
+                ]
+            delta["pending_tool_output"] = pto
         if halt:
             delta["halt"] = True
             delta["halt_reason"] = "lexicon_violation"
@@ -1304,6 +1580,50 @@ class lx_Integrate(Cognate):
         # a quiet best-effort no-op so older stores don't crash.
         self._persist_turn(state, outcome, response_text)
 
+        # v1.8.1 (D-20260502-01) -- chain outcomes are bookkeeping
+        # dispatches (task / memory_manager) that ride the primary
+        # call's cycle. They do *not* earn rewards: procedural_wins
+        # and env_snapshots commits stay attributed to the primary
+        # tool_name above. We only surface the chain in the trace so
+        # the log makes the dispatched sequence unambiguous.
+        chained_outcomes = state.get("chained_outcomes") or []
+        chain_trace = ""
+        if chained_outcomes:
+            tail_bits = [
+                f"{co.get('tool_name')}->{co.get('status')}"
+                for co in chained_outcomes
+            ]
+            chain_trace = " chain=[" + ",".join(tail_bits) + "]"
+
+        # --- Phase G Summarizer Hooks: History Compression ---
+        cfg = getattr(self.core, "config", None)
+        do_hist_compress = False
+        if cfg:
+            do_hist_compress = str(cfg.get("summarize_history_integrate", "True")).lower() == "true"
+        if not do_hist_compress and hasattr(store, "get"):
+            do_hist_compress = str(store.get("summarize_history_integrate", "False")).lower() == "true"
+            
+        if do_hist_compress and store is not None:
+            from core.history_compressor import maybe_compress
+            history_cap = 15
+            trigger = 2.0
+            target = 800
+            
+            if cfg:
+                history_cap = int(cfg.get("conversation_history", history_cap))
+                trigger = float(cfg.get("history_compression_trigger", trigger))
+                target = int(cfg.get("history_compression_target_chars", target))
+            if hasattr(store, "get"):
+                trigger = float(store.get("history_compression_trigger", trigger))
+                target = int(store.get("history_compression_target_chars", target))
+
+            maybe_compress(
+                state=store,
+                history_cap=history_cap,
+                trigger_multiplier=trigger,
+                target_chars=target
+            )
+
         return {
             "current_step": "OBSERVE",
             "last_reward": round(reward, 4),
@@ -1313,6 +1633,7 @@ class lx_Integrate(Cognate):
             "last_trace": (
                 f"INTEGRATE: R={reward:.3f} "
                 f"committed={committed} env_committed={env_committed}"
+                f"{chain_trace}"
             ),
         }
 
@@ -1358,10 +1679,50 @@ class lx_Integrate(Cognate):
         record_turn = getattr(store, "record_turn", None)
         if not callable(record_turn):
             return
+            
+        perception_text = str(state.get("perception_text") or "")
+        observation_kind = str(state.get("observation_kind") or "")
+        cfg = getattr(self.core, "config", None)
+        
+        # --- Phase G Summarizer Hooks (UPGRADE_PLAN_6 sec 2.b) ---
+        if observation_kind == "tool_output":
+            do_compress = False
+            if cfg:
+                do_compress = str(cfg.get("summarize_tool_results", "True")).lower() == "true"
+            if not do_compress and hasattr(store, "get"):
+                do_compress = str(store.get("summarize_tool_results", "False")).lower() == "true"
+
+            if do_compress:
+                from core.tool_result_compressor import maybe_compress_tool_result
+                thresh = 4000
+                target = 500
+                if cfg:
+                    thresh = int(cfg.get("tool_result_compression_threshold", thresh))
+                    target = int(cfg.get("tool_result_compression_target_chars", target))
+                if hasattr(store, "get"):
+                    thresh = int(store.get("tool_result_compression_threshold", thresh))
+                    target = int(store.get("tool_result_compression_target_chars", target))
+
+                perc_event = state.get("perception_event", {})
+                tool_name = perc_event.get("tool_name", "")
+                
+                tr = perc_event.get("tool_result", {})
+                args = {}
+                if isinstance(tr, dict):
+                    args = tr.get("args", {})
+                
+                wrapped, report = maybe_compress_tool_result(
+                    tool_name, args, perception_text,
+                    threshold_chars=thresh,
+                    target_chars=target
+                )
+                if wrapped:
+                    perception_text = wrapped
+
         try:
             record_turn(
-                perception_text=str(state.get("perception_text") or ""),
-                observation_kind=str(state.get("observation_kind") or ""),
+                perception_text=perception_text,
+                observation_kind=observation_kind,
                 response_text=str(response_text or ""),
                 tool_name=str((outcome or {}).get("tool_name") or ""),
                 status=str((outcome or {}).get("status") or ""),

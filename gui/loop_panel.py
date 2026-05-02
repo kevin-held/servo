@@ -91,9 +91,16 @@ class LoopPanel(QWidget):
         self.profile_combo = QComboBox()
         self.profile_combo.setEditable(True)
         self.profile_combo.setStyleSheet("""
-            QComboBox { background: #111; color: #00E5FF; border: none; font-size: 11px; font-weight: bold; }
-            QComboBox::drop-down { border: none; }
-            QComboBox QAbstractItemView { background: #111; color: #00E5FF; }
+            QComboBox { 
+                background: #111; color: #00E5FF; border: 1px solid #2a2a2a; border-radius: 4px; 
+                padding: 2px 8px; font-size: 11px; font-weight: bold; 
+            }
+            QComboBox::drop-down { border: none; width: 20px; }
+            QComboBox::down-arrow {
+                image: none; border-left: 3px solid transparent; border-right: 3px solid transparent;
+                border-top: 3px solid #00E5FF; width: 0; height: 0; margin-right: 4px;
+            }
+            QComboBox QAbstractItemView { background: #111; color: #00E5FF; selection-background-color: #1a1a1a; }
         """)
         
         self.save_profile_btn = QPushButton("💾")
@@ -116,8 +123,8 @@ class LoopPanel(QWidget):
         # ── AUTONOMY GROUP ──
         autonomy_group = QGroupBox("Autonomy && Endurance")
         autonomy_group.setStyleSheet("""
-            QGroupBox { color: #888; font-size: 10px; font-weight: bold; margin-top: 10px; border: 1px solid #222; border-radius: 4px; padding-top: 10px; }
-            QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; }
+            QGroupBox { color: #aaa; font-size: 10px; font-weight: bold; margin-top: 10px; border: 1px solid #333; border-radius: 4px; padding-top: 10px; }
+            QGroupBox::title { subcontrol-origin: margin; left: 8px; padding: 0 3px; background: #111; }
         """)
         ag_layout = QVBoxLayout(autonomy_group)
         
@@ -328,7 +335,15 @@ class LoopPanel(QWidget):
 
         for combo in self.findChildren(QComboBox):
             if combo != self.profile_combo:
-                combo.setStyleSheet("background: #1a1a1a; color: #ccc; border: 1px solid #333; font-size: 11px;")
+                combo.setStyleSheet("""
+                    QComboBox { background: #1a1a1a; color: #eee; border: 1px solid #333; border-radius: 3px; padding: 1px 4px; font-size: 11px; }
+                    QComboBox::drop-down { border: none; width: 14px; }
+                    QComboBox::down-arrow {
+                        image: none; border-left: 3px solid transparent; border-right: 3px solid transparent;
+                        border-top: 3px solid #00E5FF; width: 0; height: 0;
+                    }
+                    QComboBox QAbstractItemView { background: #1a1a1a; color: #eee; selection-background-color: #333; }
+                """)
         
         for lbl in self.findChildren(QLabel):
             if not lbl.styleSheet():
@@ -358,7 +373,7 @@ class LoopPanel(QWidget):
         # The `trace_event` signal on `lx_servo_thread.ServoCoreThread`
         # remains defined but unsubscribed -- emissions are no-ops.
 
-        self.setStyleSheet("QWidget { background: #111; }")
+        # Removed local background: #111 to allow global QMainWindow styling to propagate.
 
     def _section_label(self, text: str, layout: QVBoxLayout):
         lbl = QLabel(text)

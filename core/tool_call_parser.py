@@ -23,6 +23,15 @@
 #     prefers fenced JSON, falls back to brace scanning, then to four
 #     unescaping strategies for common LLM hallucinations.
 #
+#   parse_tool_calls(text: str) -> list[dict]
+#     v1.8.1 (D-20260502-01) -- multi-call variant that returns *every*
+#     valid fenced-JSON tool call in the response, in emission order.
+#     Empty list when no calls are present. parse_tool_call now thin-
+#     shims `parse_tool_calls(...)[0] if any else None` for back-compat.
+#     The chain dispatcher in lx_Act enforces a hard cap (2) and a
+#     bookkeeping-tail whitelist; the parser itself is permissive and
+#     returns the full list so the caller can decide.
+#
 #   strip_tool_calls(text: str) -> str
 #     Removes Markdown-fenced JSON blocks from a string so the remaining
 #     prose can be surfaced to chat as the model's response. Mirrors the
@@ -37,7 +46,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
+from typing import List, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -67,57 +76,23 @@ def _try_parse(s: str) -> Optional[dict]:
 # Public API
 # ---------------------------------------------------------------------------
 
-def parse_tool_call(text: str) -> Optional[dict]:
-    """Extract a tool call from an LLM response.
+def _try_all_strategies(json_str: str) -> Optional[dict]:
+    """Run the four-strategy decode ladder against a single JSON blob.
 
-    Mirrors `core.loop.CoreLoop._parse_tool_call` so the Cognate
-    dispatch surface can use the same parser the legacy chat path
-    uses. Procedure:
-
-      1. Strip leading <think>...</think> blocks (R1-style chain-of-
-         thought) so they can't confuse the JSON-block matcher.
-      2. Prefer a fenced JSON block (```json ... ``` or ``` ... ```).
-      3. Fall back to scanning for the first '{' and last '}'.
-      4. Try four parse strategies in order:
-            (a) direct parse
-            (b) trailing-bracket trim (handles "}}}" hallucinations)
-            (c) Windows-path escape fixup (C:\\Users style backslashes)
-            (d) multiline-string newline escape
-
-    Returns the decoded dict (always with a "tool" key) or None if no
-    valid call is present.
+    Extracted from the original parse_tool_call body so both the
+    singular and plural public APIs share the same hallucination-
+    tolerant parse path. Strategies, in order:
+      (a) direct parse
+      (b) trailing-bracket trim (handles "}}}" hallucinations)
+      (c) Windows-path escape fixup (C:\\Users style backslashes)
+      (d) multiline-string newline escape (combines with (c))
     """
-    if not text:
-        return None
-
-    # Strip <think>...</think> block if present -- the chain-of-thought
-    # often contains brace-rich pseudo-JSON that would otherwise win
-    # the fenced-block match.
-    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-
-    # Try to find a JSON block specifically. The (?:json)? makes the
-    # language tag optional; ``` alone with a JSON body is accepted.
-    match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', text, re.DOTALL)
-    if match:
-        json_str = match.group(1)
-    else:
-        # Fallback: find the first '{' and the last '}'. Greedy on
-        # purpose -- a tool call may contain nested objects.
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1 and start < end:
-            json_str = text[start:end + 1]
-        else:
-            json_str = text
-
-    # 1. Attempt direct parse.
+    # 1. Direct parse.
     parsed = _try_parse(json_str)
     if parsed:
         return parsed
 
-    # 2. Attempt trailing bracket trimming (handles hallucinations
-    #    like "}}}"). Up to five iterations -- more than that and the
-    #    payload is truly malformed.
+    # 2. Trailing bracket trim.
     temp_str = json_str
     for _ in range(5):
         if temp_str.endswith("}"):
@@ -126,25 +101,92 @@ def parse_tool_call(text: str) -> Optional[dict]:
             if parsed:
                 return parsed
 
-    # 3. Fallback: models frequently output unescaped Windows paths
-    #    like C:\Users. JSON requires backslashes to be escaped; the
-    #    regex turns lone backslashes into doubled ones unless they're
-    #    already part of a valid escape (\\, \", \/, \b, \f, \n, \r,
-    #    \t, \uXXXX).
+    # 3. Windows-path escape fixup.
     fixed_str = re.sub(r'\\(?![\"\\/bfnrtu])', r'\\\\', json_str)
     parsed = _try_parse(fixed_str)
     if parsed:
         return parsed
 
-    # 4. Fallback: multiline unescaped strings (raw newlines inside a
-    #    JSON string literal). Building on top of (3) so both fixups
-    #    apply.
+    # 4. Multiline-string newline escape (atop (3)).
     fixed_str = fixed_str.replace('\n', '\\n').replace('\r', '\\r')
     parsed = _try_parse(fixed_str)
     if parsed:
         return parsed
 
     return None
+
+
+def parse_tool_calls(text: str) -> List[dict]:
+    """Extract every fenced-JSON tool call from an LLM response.
+
+    v1.8.1 (D-20260502-01) -- multi-call variant. Returns calls in
+    emission order so the dispatcher can honor "do work, then mark
+    complete" patterns the model naturally emits.
+
+    Procedure:
+      1. Strip leading <think>...</think> blocks.
+      2. Find every Markdown-fenced JSON block via re.finditer (NOT a
+         single re.search, which is what the singular parser used).
+      3. For each block, run the four-strategy decode ladder. Successful
+         decodes append to the result list; failures are silently
+         dropped (a malformed block in the middle of a chain shouldn't
+         poison the calls before/after it).
+      4. If no fenced blocks were found, fall back to the brace-scan
+         path so a model that emitted a single call without fences
+         still produces a one-element list. (We do *not* attempt to
+         scan for multiple unfenced calls -- the brace heuristic is too
+         lossy to demarcate call boundaries.)
+
+    Returns [] when no valid call is present. Caller (lx_Act) is
+    responsible for cap + whitelist enforcement; the parser itself
+    is permissive.
+    """
+    if not text:
+        return []
+
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+
+    calls: List[dict] = []
+    fenced = list(re.finditer(r'```(?:json)?\s*(\{.*?\})\s*```', text, re.DOTALL))
+    if fenced:
+        for m in fenced:
+            parsed = _try_all_strategies(m.group(1))
+            if parsed:
+                calls.append(parsed)
+        return calls
+
+    # No fenced blocks -- fall back to brace scanning for a single call.
+    start = text.find('{')
+    end = text.rfind('}')
+    if start != -1 and end != -1 and start < end:
+        json_str = text[start:end + 1]
+    else:
+        json_str = text
+    parsed = _try_all_strategies(json_str)
+    if parsed:
+        calls.append(parsed)
+    return calls
+
+
+def parse_tool_call(text: str) -> Optional[dict]:
+    """Extract a single tool call from an LLM response.
+
+    v1.8.1 thin shim over `parse_tool_calls`: returns the first call
+    when one or more is present, else None. Preserved for back-compat
+    with any caller that expects a single-call shape (legacy chat path,
+    tests written before the chain dispatcher landed).
+
+    Mirrors `core.loop.CoreLoop._parse_tool_call`. Procedure (delegated):
+
+      1. Strip leading <think>...</think> blocks.
+      2. Prefer fenced JSON; fall back to brace scanning.
+      3. Run the four-strategy decode ladder
+         (direct / trailing-trim / Windows-path / multiline).
+
+    Returns the decoded dict or None.
+    """
+    calls = parse_tool_calls(text)
+    return calls[0] if calls else None
 
 
 def strip_tool_calls(text: str) -> str:
@@ -165,4 +207,4 @@ def strip_tool_calls(text: str) -> str:
     return text.strip()
 
 
-__all__ = ["parse_tool_call", "strip_tool_calls"]
+__all__ = ["parse_tool_call", "parse_tool_calls", "strip_tool_calls"]

@@ -85,6 +85,9 @@ class ServoCoreThread(QThread):
     max_auto_continues            = 2
     verbosity                     = "Normal"
     stream_enabled                = True
+    hardware_throttling_enabled        = False
+    hardware_throttle_threshold_enter  = 85.0
+    hardware_throttle_threshold_exit   = 70.0
 
     # Telemetry counters that context_dump / loop_panel may read via
     # getattr. They never increment under the Servo path in Phase E;
@@ -106,6 +109,12 @@ class ServoCoreThread(QThread):
         self._core = ServoCore(ollama=ollama, config=config)
         self._state = state
         self._tools = tools
+
+        # Expose ollama and state on the thread so GUI-facing tools
+        # (system_config, context_dump, etc.) that duck-type
+        # `loop.ollama.*` and `loop.state.*` keep working.
+        self.ollama = ollama
+        self.state = state
 
         # Phase F hotfix (D-20260427) -- the legacy `core.state.StateStore`
         # passed in by `gui/main_window.py` is a key/value SQLite + Chroma
@@ -129,6 +138,11 @@ class ServoCoreThread(QThread):
         # main_window resolves to the same ConfigRegistry the cognates
         # see. This is the GUI's primary read of the registry.
         self.config = self._core.config
+
+        # Wire the config registry's persistence and live-injection
+        # references so system_config.set() and profile loads work.
+        self.config.bind_state(state)
+        self.config.bind_loop(self)
 
         # Run-control flags. The cognate loop runs synchronously inside
         # ServoCore.run_cycle; our QThread.run() supervises it and
@@ -256,6 +270,13 @@ class ServoCoreThread(QThread):
             self._core.signal_halt()
         except Exception:
             pass
+        # Clear the dirty flag on graceful shutdown so the next boot
+        # can distinguish a crash from a normal exit.
+        try:
+            if hasattr(self._state, 'set_session_flag'):
+                self._state.set_session_flag('dirty', 'False')
+        except Exception:
+            pass
 
     def resume(self):
         self._pause_requested = False
@@ -284,6 +305,38 @@ class ServoCoreThread(QThread):
             self.step_changed.emit("OBSERVE")
             self.trace_event.emit("OBSERVE", "[Servo path] CIRCUIT CLOSED. SERVO ACTIVE.")
 
+            # ── Restart-reason detection (ported from CoreLoop D-20260421-14) ──
+            reason = self._detect_restart_reason()
+            boot_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+            restart_text = (
+                f"--- SYSTEM RESTART ---\n"
+                f"Timestamp: {boot_ts}\n"
+                f"Reason: {reason}\n\n"
+                "Session suspended. Booting new session. All prior volatile state, "
+                "open file offsets, and unconfirmed commands have been wiped. "
+                "Review your workspace and task list before continuing."
+            )
+
+            # Inject the restart notice as the first perception so REASON
+            # sees it on the very first cycle and knows it was restarted.
+            try:
+                self._core.submit_perception({
+                    "kind": "user_input",
+                    "text": f"[SYSTEM REFERENCE ONLY: STARTUP DIAGNOSTICS]\n{restart_text}\n[END REFERENCE - NO ACTION REQUIRED]",
+                    "_transient": True,
+                    "type": "system",
+                    "timestamp": time.time(),
+                })
+            except Exception:
+                pass
+
+            # Set the dirty flag so a crash before cleanup() is detectable.
+            try:
+                if hasattr(self._state, 'set_session_flag'):
+                    self._state.set_session_flag('dirty', 'True')
+            except Exception:
+                pass
+
             # Best-effort halt-injection wrapper around the state store
             # so `stop()` propagates into the cognate loop. If the
             # store doesn't expose `apply_delta`, we just call
@@ -301,8 +354,12 @@ class ServoCoreThread(QThread):
                     original_apply = store.apply_delta
 
                     def _watchdog_apply(delta, _orig=original_apply, _self=self):
+                        d = delta or {}
+                        if isinstance(d, dict) and "current_step" in d:
+                            _self.step_changed.emit(d["current_step"])
+                            
                         if _self._stop_requested:
-                            d = dict(delta or {})
+                            d = dict(d)
                             d["halt"] = True
                             return _orig(d)
                         return _orig(delta)
@@ -318,6 +375,40 @@ class ServoCoreThread(QThread):
         except Exception as e:
             tb = traceback.format_exc()
             self.error_occurred.emit(f"[Servo path] {type(e).__name__}: {e}\n{tb}")
+
+
+    # ------------------------------------------------------------------
+    # Restart-reason detection (ported from CoreLoop D-20260421-14).
+    # ------------------------------------------------------------------
+    def _detect_restart_reason(self) -> str:
+        """Determine why the system is rebooting.
+
+        Priority order:
+          1. CODE_DEPLOYMENT — core/ directory modified in the last 3 min.
+          2. FAILURE_RECOVERY — session_dirty was True (non-graceful exit).
+          3. STANDARD_BOOT — normal initialization.
+        """
+        import os
+
+        # 1. Code deployment check
+        try:
+            core_dir = os.path.dirname(os.path.abspath(__file__))
+            mtime = os.path.getmtime(core_dir)
+            if (time.time() - mtime) < 180:  # 3-minute window
+                return "CODE_DEPLOYMENT (Internal logic update detected)"
+        except Exception:
+            pass
+
+        # 2. Dirty-shutdown check
+        try:
+            if hasattr(self._state, 'get_session_flag'):
+                is_dirty = self._state.get_session_flag('dirty', 'False') == 'True'
+                if is_dirty:
+                    return "FAILURE_RECOVERY (Non-graceful termination detected)"
+        except Exception:
+            pass
+
+        return "STANDARD_BOOT (Normal initialization)"
 
 
 __all__ = ["ServoCoreThread"]

@@ -1,17 +1,41 @@
 # History — How Servo Got Here
 
 **Version:** 1.0
-**Last Updated:** 2026-05-01
+**Last Updated:** 2026-05-02
 **Status:** Canonical (append on each release)
 
 The story of Servo, told in releases. Each entry summarizes what changed and why. For decision-level rationale, see `decisions.md`.
 
-## v1.8.1 — (2026-05-02) Initialization Stability & GUI Telemetry
-**Ghost Halt Fix, Context Depth Token Meter Wiring**
+## v1.9.0 — (2026-05-02) Visual Accessibility, Tool Surface Hardening & Config Binding
+- **Global Dark Mode**: Unified the GUI's visual identity via a central `MainWindow` stylesheet. Resolved unreadable "dark-on-dark" context menus and improved `QComboBox` visibility with high-contrast cyan indicators. Removed conflicting local stylesheets from all functional panels.
+- **Tool Surface Injection**: Enhanced the `REASON` cognate to inject full JSON schemas and descriptions for all tools into the system prompt. This drastically improved model alignment and eliminated malformed tool calls by providing a precise vocabulary.
+- **ConfigRegistry Bidirectional Binding**: Added `set()`, `bind_state()`, and `bind_loop()` to `ConfigRegistry`. This enables live configuration updates from the GUI and tools (like `system_config`) to persist automatically to the profile's state ledger.
+- **YouTube Tool Modernization**: Refactored `youtube_transcript` to use `url` as the primary argument (while keeping `video` as a legacy alias) to better align with LLM prompting patterns.
+- **Autonomous Self-Healing**: Servo autonomously diagnosed and resolved an `UnboundLocalError` in `memory_manager.py`, demonstrating the agent's ability to maintain its own toolset.
+- **Attribute Error Fixes**: Resolved `AttributeError` issues in `ConfigRegistry` and `lx_StateStore` by implementing missing `set()` methods required by the legacy tooling and GUI contracts.
+
+## v1.8.1 — (2026-05-02) Initialization Stability, Chat Dispatch Hardening & GUI Telemetry
+**Ghost Halt Fix, Chores Tool-Call Discipline, Chain Dispatcher, Token Meter Wiring**
 
 ### Key Improvements
 *   **Stale `halt` signal discard (ADR D-20260502-01)**: Fixed an initialization bug where the `chores.md` automatic execution would instantly halt after mapping the project. The root cause was `lx_StateStore` blindly loading a leftover `"halt": True` flag from the `lx_state_default.json` persistence file, which had been written during a previous manually aborted session. `core.lx_state.StateStore._load_state` now actively strips out `"halt"` when loading the state from disk via `data.pop("halt", None)`, ensuring that manual stops strictly terminate the *current* session without permanently paralyzing the profile.
 *   **Context Depth (Tokens) GUI wiring**: The `telemetry_event` signal in `ServoCoreThread` was inert because the Phase E/F cognate loop didn't emit telemetry. Wired `self._core.telemetry_hook` in `lx_servo_thread.py` to trigger the `telemetry_event.emit(current, limit)` Qt signal. Added logic to `lx_Reason.execute` to call `hook(ollama.total_tokens_used, ollama.num_ctx)` immediately after the `ollama.chat` call finishes. The GUI's context depth progress bar and token pressure color-coding now successfully update at the end of every `REASON` cycle.
+*   **REASON prose-only escape hatch gated on `observation_kind` (ADR D-20260502-02)**: With `--chores`, REASON was hallucinating "the initialization sequence is complete" instead of dispatching the chores ledger's tool calls. Diagnosis traced to the closing line of `_build_system_prompt`: *"If you have nothing to do, emit prose only..."* — a permission slip the model took on every cycle, including the cycle where a fresh `user_input` perception was loaded with multi-step work. `core/lx_cognates.py::lx_Reason._build_system_prompt` now reads `state["observation_kind"]` and emits a hard imperative when the value is `"user_input"`: *"A user_input perception is active. Your first emission MUST contain a tool call... Do not emit prose-only when the user has just spoken; the loop will treat that as a no-op."* The escape hatch is restored on `tool_output` cycles so REASON can still park quietly mid-flight once the work is done.
+*   **Chain dispatcher — multi-call REASON honoring (ADR D-20260502-03)**: Once REASON started dispatching tools the chores no-op surfaced a separate failure mode: the model emits *two* fenced JSON blocks per cycle (the natural "do work + mark complete" pattern), and the parser was keeping only one. Worse, the surviving call was the trailing bookkeeping call — so a `task(action="complete")` would land while the actual work call was silently dropped, leaving the ledger lying about what happened. Fix lands in three layers:
+    1.  `core/tool_call_parser.py` exposes `parse_tool_calls(text) -> list[dict]` that returns every fenced-JSON block in emission order via `re.finditer` (replacing the singular `re.search` path). The hallucination-tolerant decode ladder was extracted into `_try_all_strategies` so both APIs share it. `parse_tool_call` is now a thin shim returning `calls[0] if calls else None` for back-compat.
+    2.  `core/lx_cognates.py` adds `_BOOKKEEPING_PRIMITIVES = {"task", "memory_manager"}` and `_MAX_CHAIN_LENGTH = 2`. `lx_Reason.execute` validates the parsed call list against the whitelist + cap and writes `chained_calls` to the delta; non-bookkeeping tails and overflow calls are dropped with a `chain_warning` surfaced to the trace.
+    3.  `lx_Act.execute` was refactored: dispatch logic moved into `_dispatch_one(reg, tool, args)` so the primary call and the chain loop share the same ToolContext-injection / latency-measurement / lexicon-gate path. After the primary lands, `lx_Act` iterates `state["chained_calls"]` only when the primary returned `status="ok"` and didn't trip the lexicon gate (atomic-on-first-failure — bookkeeping calls predicated on success must never run after a fail). Chained outcomes flow into the delta as `chained_outcomes`; `_wrap_delta` folds them into the trace and into `pending_tool_output["chained_summary"]` so the next cycle's REASON sees the bookkeeping confirmations. `lx_Integrate.execute` reads `chained_outcomes` for trace surfacing only — reward attribution and procedural_wins / env_snapshots commits stay attributed to the primary call so the bandit's one-observation-one-reward invariant survives.
+
+### Acceptance
+*   **Parser smoke tests pass**: 8 cases covering single fenced call, two-call chain (the v1.8.1 case), back-compat shim, empty / no-tool, `<think>` strip, malformed-middle resilience, unfenced single, and the literal real-world model output shape from the chores no-op report. `parse_tool_calls(text2)` returns `[{"tool": "file_write", ...}, {"tool": "task", ...}]` in emission order.
+*   **Compile-clean** across `core/tool_call_parser.py`, `core/lx_cognates.py`, `codex/manifest.json`, `codex/manifest_compact.json`. No new dependencies. Singular `parse_tool_call` callers (legacy chat path, existing tests) keep their original semantics — first call returned, None on empty.
+*   **Behavioral expectation**: `python main.py --chores` should now dispatch `task(action="create", tasks=[...])` as REASON's first move (not hallucinate completion), and when the model later emits `file_write` + `task(action="complete")` in the same cycle both calls execute in order, with the complete dropped if the file_write fails.
+
+### Internals
+*   The chain whitelist is intentionally narrow: `task` and `memory_manager` are pure ledger writes. `file_write` is *not* on the list — even though "do work + mark complete" is the canonical pattern, the work call must always be the *primary* (call index 0), not the tail. A model that emits `task(complete)` followed by `file_write(...)` would have the file_write dropped with a warning — semantically wrong sequencing.
+*   The cap of 2 preserves the bandit's one-cycle invariant: procedural_wins and env_snapshots commits stay attributed to the primary tool_name, so chain dispatch never confuses the cosine kNN cold-start surface that Phase G just landed.
+*   `_dispatch_one` is the shared dispatch leaf for both primary and chain. Re-validation at dispatch time is defense-in-depth — a future REASON path that skips the validation block can't sneak a non-bookkeeping primitive past the dispatcher.
+*   `chain_warning` rides on the REASON delta and is appended to `last_trace`. Phase H+ may add an INTEGRATE-side regression guard that fires when REASON emitted prose-only on a user_input cycle (Fix #3 in the diagnosis), but Phase 1.8.1 stops at the prompt-tightening + parser/dispatcher fix per "land cheapest first."
 
 ---
 

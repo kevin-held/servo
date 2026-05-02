@@ -107,6 +107,18 @@ class lx_StateStore:
     def get_active_profile(self) -> dict:
         return self.current_state
 
+    # ------------------------------------------------------------------
+    # Key-value helpers — compatible with legacy StateStore.set / .get
+    # that history_compressor and tool_result_compressor rely on.
+    # ------------------------------------------------------------------
+
+    def set(self, key: str, value: str) -> None:
+        self.current_state[key] = value
+        self.sync_vector()
+
+    def get(self, key: str, default=None):
+        return self.current_state.get(key, default)
+
     def apply_delta(self, delta: dict):
         if not isinstance(delta, dict):
             return
@@ -379,6 +391,17 @@ class lx_StateStore:
             "CREATE INDEX IF NOT EXISTS idx_turns_timestamp "
             "ON turns (timestamp)"
         )
+        # Phase G (UPGRADE_PLAN_6 sec 2.b) -- conversation summary table
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS conversation_summary ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " summary TEXT NOT NULL,"
+            " covers_from_id INTEGER NOT NULL,"
+            " covers_to_id INTEGER NOT NULL,"
+            " model_used TEXT NOT NULL,"
+            " created_at REAL NOT NULL"
+            ")"
+        )
 
     def record_turn(
         self,
@@ -454,3 +477,134 @@ class lx_StateStore:
             }
             for r in rows
         ]
+
+    # ------------------------------------------------------------------
+    # Phase G (UPGRADE_PLAN_6 sec 2.b) -- conversation history compression.
+    # ------------------------------------------------------------------
+
+    def get_latest_conversation_summary(self) -> dict | None:
+        try:
+            conn = sqlite3.connect(self._turns_db_path(), check_same_thread=False)
+        except sqlite3.Error:
+            return None
+        try:
+            self._ensure_turns_schema(conn)
+            cur = conn.execute(
+                "SELECT id, summary, covers_from_id, covers_to_id, model_used, created_at "
+                "FROM conversation_summary ORDER BY id DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                "id":             row[0],
+                "summary":        row[1],
+                "covers_from_id": row[2],
+                "covers_to_id":   row[3],
+                "model_used":     row[4],
+                "created_at":     row[5],
+            }
+        except sqlite3.Error:
+            return None
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def save_conversation_summary(
+        self,
+        summary: str,
+        covers_from_id: int,
+        covers_to_id: int,
+        model_used: str,
+    ) -> int:
+        try:
+            conn = sqlite3.connect(self._turns_db_path(), check_same_thread=False)
+        except sqlite3.Error:
+            return 0
+        try:
+            self._ensure_turns_schema(conn)
+            cur = conn.execute(
+                "INSERT INTO conversation_summary "
+                "(summary, covers_from_id, covers_to_id, model_used, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (summary, covers_from_id, covers_to_id, model_used, time.time()),
+            )
+            conn.commit()
+            return cur.lastrowid
+        except sqlite3.Error:
+            return 0
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def count_conversation_turns_since(self, conversation_id: int) -> int:
+        try:
+            conn = sqlite3.connect(self._turns_db_path(), check_same_thread=False)
+        except sqlite3.Error:
+            return 0
+        try:
+            self._ensure_turns_schema(conn)
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM turns WHERE id > ?", (conversation_id,)
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+        except sqlite3.Error:
+            return 0
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def get_conversation_turns_range(self, from_id: int, to_id: int) -> list:
+        try:
+            conn = sqlite3.connect(self._turns_db_path(), check_same_thread=False)
+        except sqlite3.Error:
+            return []
+        try:
+            self._ensure_turns_schema(conn)
+            cur = conn.execute(
+                "SELECT id, perception_text, response_text FROM turns "
+                "WHERE id >= ? AND id <= ? ORDER BY id ASC",
+                (from_id, to_id),
+            )
+            # Adapt the turns format to what the compressor expects 
+            # The compressor expects [{"role":..., "content":...}, ...]
+            rows = []
+            for r in cur.fetchall():
+                # Tool outputs and user inputs go in 'user' role for the compressor
+                if r[1]:
+                    rows.append({"id": r[0], "role": "user", "content": r[1]})
+                if r[2]:
+                    rows.append({"id": r[0], "role": "assistant", "content": r[2]})
+            return rows
+        except sqlite3.Error:
+            return []
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def get_newest_conversation_id(self) -> int | None:
+        try:
+            conn = sqlite3.connect(self._turns_db_path(), check_same_thread=False)
+        except sqlite3.Error:
+            return None
+        try:
+            self._ensure_turns_schema(conn)
+            cur = conn.execute("SELECT MAX(id) FROM turns")
+            row = cur.fetchone()
+            return int(row[0]) if row and row[0] is not None else None
+        except sqlite3.Error:
+            return None
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
