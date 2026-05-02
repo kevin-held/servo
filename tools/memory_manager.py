@@ -11,13 +11,34 @@ TOOL_SCHEMA      = {
     "content": {"type": "string", "description": "The logic, summary, or thoughts."}
 }
 
-def execute(action: str, content: str = "") -> str:
-    db_path = os.path.join(os.path.dirname(__file__), "..", "state", "state.db")
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    
+def execute(action: str, content: str = "", *, conn_factory=None, tool_context=None) -> str:
+    # Phase E (UPGRADE_PLAN_4 sec 4) -- optional conn_factory injection.
+    # When the Cognate surface supplies a zero-arg callable returning a
+    # sqlite3.Connection, we use that for all memory I/O. When absent
+    # (legacy loop.py boot path, direct test invocation) we fall through
+    # to the Phase D literal: state/state.db relative to this file.
+    # The factory contract is connection-only -- this function still owns
+    # PRAGMA + schema idempotency so the factory stays path-agnostic.
+    #
+    # Phase F (UPGRADE_PLAN_5 sec 5) -- tool_context kwarg supersedes the
+    # bare conn_factory pattern with a uniform ToolContext object that
+    # carries state/config/telemetry/conn_factory/ollama. Resolution
+    # order: explicit conn_factory wins (back-compat with Phase E
+    # callers), then tool_context.conn_factory, then the legacy literal.
+    # Duck-typed read via getattr so tool files stay independent of
+    # core/tool_context.py imports.
+    if conn_factory is None and tool_context is not None:
+        ctx_factory = getattr(tool_context, "conn_factory", None)
+        if callable(ctx_factory):
+            conn_factory = ctx_factory
     conn = None
     try:
-        conn = sqlite3.connect(db_path, check_same_thread=False)
+        if conn_factory is not None:
+            conn = conn_factory()
+        else:
+            db_path = os.path.join(os.path.dirname(__file__), "..", "state", "state.db")
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            conn = sqlite3.connect(db_path, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
         
         # Make sure the table exists just in case memory manager fires early

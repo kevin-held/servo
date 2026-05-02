@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Slot, QFileSystemWatcher
 import os
 
-from core.loop          import CoreLoop
 from core.state         import StateStore
 from core.ollama_client import OllamaClient
 from core.tool_registry import ToolRegistry
@@ -14,6 +13,15 @@ from gui.loop_panel     import LoopPanel
 from gui.chat_panel     import ChatPanel
 from gui.tool_panel     import ToolPanel
 from gui.context_viewer import ContextViewerWindow
+
+
+# Phase G (UPGRADE_PLAN_6 sec 1, D-20260427-01) -- USE_SERVO_CORE no
+# longer carries any branching meaning. The Phase F retirement of the
+# toggle (D-20260426-01 step 8) made the constant a no-op already;
+# Phase G's deletion of `core/loop.py` removes the alternative it
+# would have toggled to. The constant is kept as a name in case a
+# downstream consumer reads it for logging or telemetry.
+USE_SERVO_CORE = True
 
 
 class MainWindow(QMainWindow):
@@ -38,8 +46,12 @@ class MainWindow(QMainWindow):
         self.state  = StateStore(profile=profile)
         self.ollama = OllamaClient()
         self.tools  = ToolRegistry(config=None) # Will be injected in loop
-        self.loop   = CoreLoop(self.state, self.ollama, self.tools)
-        
+
+        # ServoCore is the only path. The cognate loop owns chat
+        # ingestion, OBSERVE park/wake, and response_ready emission.
+        from core.lx_servo_thread import ServoCoreThread
+        self.loop = ServoCoreThread(self.state, self.ollama, self.tools)
+
         # Inject the loop's central config registry into the tools
         self.tools.config = self.loop.config
 
@@ -47,7 +59,7 @@ class MainWindow(QMainWindow):
         self._connect_signals()
         self._start()
 
-    # ── UI ────────────────────────────────────────
+    # ── UI ──────────────────────
 
     def _build_ui(self):
         splitter = QSplitter(Qt.Horizontal)
@@ -174,12 +186,25 @@ class MainWindow(QMainWindow):
                     # Track this file for changes
                     self.config_watcher.addPath(os.path.join(config_dir, f))
 
-    # ── Signals ───────────────────────────────────
+    # ── Signals ───────────────────
 
     def _connect_signals(self):
         self.loop.step_changed.connect(self.loop_panel.on_step_changed)
-        self.loop.trace_event.connect(self.loop_panel.on_trace_event)
-        self.loop.tool_called.connect(self.loop_panel.on_tool_called)
+        # Phase G (UPGRADE_PLAN_6 sec 2.c, D-20260427-02) -- the LOOP
+        # STATE trace tree was removed, so `trace_event` and
+        # `tool_called` no longer have GUI listeners. The signals are
+        # still defined on `ServoCoreThread` for forward compatibility
+        # (and so existing emissions don't crash); they fire into the
+        # void on the cognate path.
+
+        # ServoCoreThread emits `tool_dispatched(tool_name)` right
+        # before lx_Act invokes the registry, so the tool panel can
+        # highlight the active atomic primitive. The hasattr gate
+        # stays for forward compatibility with future engines that
+        # may not implement the signal.
+        if hasattr(self.loop, "tool_dispatched"):
+            self.loop.tool_dispatched.connect(self.tool_panel.on_tool_dispatched)
+
         self.loop.response_ready.connect(self.chat_panel.on_response_ready)
         self.loop.response_ready.connect(self._on_response_ready)
         self.loop.error_occurred.connect(self.chat_panel.on_error)
@@ -284,7 +309,7 @@ class MainWindow(QMainWindow):
         self.chat_panel.input_submitted.connect(self._on_input)
         self.tool_panel.tool_changed.connect(lambda: self.tools.load_all())
 
-    # ── Startup ───────────────────────────────────
+    # ── Startup ───────────────────
 
     def _start(self):
         if self.ollama.is_available():
@@ -299,7 +324,7 @@ class MainWindow(QMainWindow):
                 self.status_label.setText("Running startup diagnostics...")
                 
                 # Make sure the user can see what's happening
-                self.chat_panel.append_message("System", f"Running hardware diagnostics on profile '{self.profile}'. Please wait...")
+                self.chat_panel.append_message("System", f"Running hardware diagnostics on profile \'{self.profile}\'. Please wait...")
                 
                 self._startup_worker = StartupWorker(
                     run_fast=True, 
@@ -319,7 +344,7 @@ class MainWindow(QMainWindow):
 
         else:
             self.status_label.setText(
-                "⚠  Ollama not found — run 'ollama serve' then restart"
+                "⚠  Ollama not found — run \'ollama serve\' then restart"
             )
 
     @Slot(str)
@@ -367,7 +392,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.chat_panel.on_error(f"Failed to run chores: {e}")
 
-    # ── Slots ─────────────────────────────────────
+    # ── Slots ─────────────────
 
     @Slot(str, str)
     def _on_input(self, text: str, image_b64: str = ""):
@@ -444,7 +469,7 @@ class MainWindow(QMainWindow):
         filename = os.path.basename(path)
         current = self.loop_panel.profile_combo.currentText()
         if filename == current:
-            self.chat_panel.append_message("System", f"⚡ Hot-Reload: '{filename}' modified externally. Syncing...")
+            self.chat_panel.append_message("System", f"⚡ Hot-Reload: \'{filename}\' modified externally. Syncing...")
             self._on_profile_changed(current)
 
     @Slot()

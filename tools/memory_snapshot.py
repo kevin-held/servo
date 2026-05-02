@@ -35,34 +35,54 @@ def _read_goals() -> dict:
         return {}
 
 
-def _read_working_memory() -> str:
+def _open_state_db(conn_factory=None):
+    """Phase E (UPGRADE_PLAN_4 sec 4) -- centralize the state.db open so
+    both helpers share the same injection point. When `conn_factory` is
+    supplied by the Cognate surface, we use it; otherwise fall through
+    to the Phase D literal (state/state.db relative to project root).
+    Returns None if the legacy DB is missing (so read helpers can degrade
+    gracefully), or the live connection otherwise.
+    """
+    if conn_factory is not None:
+        try:
+            return conn_factory()
+        except Exception:
+            return None
+    db_path = _ROOT / "state" / "state.db"
+    if not db_path.exists():
+        return None
+    return sqlite3.connect(str(db_path), check_same_thread=False)
+
+
+def _read_working_memory(conn_factory=None) -> str:
     try:
-        db_path = _ROOT / "state" / "state.db"
-        if not db_path.exists():
+        conn = _open_state_db(conn_factory)
+        if conn is None:
             return ""
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        cur = conn.execute("SELECT value FROM state WHERE key = 'working_memory'")
-        row = cur.fetchone()
-        conn.close()
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            cur = conn.execute("SELECT value FROM state WHERE key = 'working_memory'")
+            row = cur.fetchone()
+        finally:
+            conn.close()
         return row[0] if row else ""
     except Exception:
         return ""
 
 
-def _find_notes_folder() -> Path:
+def _find_notes_folder(conn_factory=None) -> Path:
     """
     Locate the model's scratch folder under workspace/. Falls back to a generic
     snapshots/ folder at the workspace root if the model can't be determined.
     """
     try:
-        import sqlite3 as _sq
-        db_path = _ROOT / "state" / "state.db"
-        if db_path.exists():
-            conn = _sq.connect(str(db_path), check_same_thread=False)
-            cur = conn.execute("SELECT value FROM state WHERE key = 'current_model'")
-            row = cur.fetchone()
-            conn.close()
+        conn = _open_state_db(conn_factory)
+        if conn is not None:
+            try:
+                cur = conn.execute("SELECT value FROM state WHERE key = 'current_model'")
+                row = cur.fetchone()
+            finally:
+                conn.close()
             if row and row[0]:
                 safe_name = row[0].replace(":", "_").replace(".", "_")
                 folder = _ROOT / "workspace" / safe_name
@@ -75,16 +95,32 @@ def _find_notes_folder() -> Path:
     return fallback
 
 
-def execute(label: str = "") -> str:
+def execute(label: str = "", *, conn_factory=None, tool_context=None) -> str:
+    # Phase E (UPGRADE_PLAN_4 sec 4) -- conn_factory is forwarded to both
+    # state.db-touching helpers so the Cognate surface can route this
+    # tool's reads without the loop shim's sqlite3.connect interception.
+    # When absent (legacy boot), helpers fall through to state/state.db.
+    #
+    # Phase F (UPGRADE_PLAN_5 sec 5) -- tool_context kwarg supersedes the
+    # bare conn_factory pattern with a uniform ToolContext object that
+    # carries state/config/telemetry/conn_factory/ollama. Resolution
+    # order: explicit conn_factory wins (back-compat with Phase E
+    # callers), then tool_context.conn_factory, then the legacy literal.
+    # Duck-typed read via getattr so this file stays independent of
+    # core/tool_context.py imports.
+    if conn_factory is None and tool_context is not None:
+        ctx_factory = getattr(tool_context, "conn_factory", None)
+        if callable(ctx_factory):
+            conn_factory = ctx_factory
     goals   = _read_goals()
-    memory  = _read_working_memory()
+    memory  = _read_working_memory(conn_factory=conn_factory)
     now_utc = datetime.now(timezone.utc)
     ts      = now_utc.strftime("%Y%m%d_%H%M%S")
 
     safe_label = label.strip().replace(" ", "_")[:40] if label.strip() else ""
     filename = f"snapshot_{ts}{'_' + safe_label if safe_label else ''}.json"
 
-    notes_dir = _find_notes_folder()
+    notes_dir = _find_notes_folder(conn_factory=conn_factory)
     out_path  = notes_dir / filename
 
     # Sandbox check

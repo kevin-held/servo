@@ -1,32 +1,32 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel,
-    QTreeWidget, QTreeWidgetItem, QFrame,
+    QWidget, QVBoxLayout, QLabel, QFrame,
     QSpinBox, QDoubleSpinBox, QComboBox, QGridLayout,
     QCheckBox, QPushButton, QGroupBox, QHBoxLayout
 )
 from core.identity import get_system_defaults
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont, QColor
+from PySide6.QtGui import QFont
 
-from core.loop import LoopStep
+# Phase G (UPGRADE_PLAN_6 sec 2.a, D-20260427-02) -- the LOOP STATE
+# panel now displays the four cognate phases directly. The historical
+# six-name vocabulary in `core.lx_steps` is preserved for legacy log
+# replay, but the GUI's step-indicator pills are keyed on the cognate
+# loop's actual dispatch surface: OBSERVE -> REASON -> ACT -> INTEGRATE.
+from core.lx_steps import Step as LoopStep
 
 
 STEP_COLORS = {
-    LoopStep.PERCEIVE:      "#4CAF50",
-    LoopStep.CONTEXTUALIZE: "#2196F3",
-    LoopStep.REASON:        "#FF9800",
-    LoopStep.ACT:           "#F44336",
-    LoopStep.INTEGRATE:     "#9C27B0",
-    LoopStep.OBSERVE:       "#546E7A",
+    LoopStep.OBSERVE:   "#4CAF50",  # Green  -- perception ingest
+    LoopStep.REASON:    "#FF9800",  # Orange -- thought / planning
+    LoopStep.ACT:       "#F44336",  # Red    -- tool dispatch
+    LoopStep.INTEGRATE: "#9C27B0",  # Purple -- ledger commit
 }
 
 STEP_ORDER = [
-    LoopStep.PERCEIVE,
-    LoopStep.CONTEXTUALIZE,
+    LoopStep.OBSERVE,
     LoopStep.REASON,
     LoopStep.ACT,
     LoopStep.INTEGRATE,
-    LoopStep.OBSERVE,
 ]
 
 
@@ -69,9 +69,7 @@ class LoopPanel(QWidget):
     def __init__(self):
         super().__init__()
         self.setMinimumWidth(260)
-        self._indicators:           dict              = {}
-        self._current_cycle_item:   QTreeWidgetItem   = None
-        self._step_group_items:     dict              = {}
+        self._indicators: dict = {}
         self._build_ui()
         self._sync_ranges()
 
@@ -150,7 +148,7 @@ class LoopPanel(QWidget):
         self.autonomous_limit_spin.setFixedWidth(102)
         
         lbl6 = QLabel("Max Auto Continues:")
-        lbl6.setToolTip("Max response stitchings (the 'glue').")
+        lbl6.setToolTip("Max response stitchings (the \'glue\').")
         self.auto_continue_spin = QSpinBox()
         self.auto_continue_spin.setFixedWidth(102)
 
@@ -351,29 +349,14 @@ class LoopPanel(QWidget):
             sf_layout.addWidget(ind)
 
         layout.addWidget(steps_frame)
+        layout.addStretch(1)
 
-        self._section_label("TRACE", layout)
-
-        # Trace tree
-        self.trace_tree = QTreeWidget()
-        self.trace_tree.setHeaderHidden(True)
-        self.trace_tree.setIndentation(14)
-        self.trace_tree.setAnimated(True)
-        self.trace_tree.setStyleSheet("""
-            QTreeWidget {
-                background: #161616;
-                color: #bbb;
-                border: none;
-                border-radius: 6px;
-                font-size: 11px;
-                font-family: Consolas, monospace;
-            }
-            QTreeWidget::item { padding: 2px 4px; }
-            QTreeWidget::item:hover { background: #222; }
-            QTreeWidget::item:selected { background: #1e2a1e; }
-            QTreeWidget::branch { background: #161616; }
-        """)
-        layout.addWidget(self.trace_tree)
+        # Phase G (UPGRADE_PLAN_6 sec 2.c, D-20260427-02) -- the TRACE
+        # tree was removed. The cognate runtime emits its observability
+        # surface through the LogPanel + benchmark criteria; the tree
+        # widget under LOOP STATE was redundant and visually heavy.
+        # The `trace_event` signal on `lx_servo_thread.ServoCoreThread`
+        # remains defined but unsubscribed -- emissions are no-ops.
 
         self.setStyleSheet("QWidget { background: #111; }")
 
@@ -410,56 +393,15 @@ class LoopPanel(QWidget):
                 lo, hi = bounds[key]
                 widget.setRange(lo, hi)
 
-    # ── Slots ─────────────────────────────────────
+    # ── Slots ─────────────────────────
 
     @Slot(str)
     def on_step_changed(self, step: str):
+        # Phase G (UPGRADE_PLAN_6 sec 2.a, D-20260427-02) -- with the
+        # four-cognate vocabulary, OBSERVE is the cycle root. Anything
+        # not in STEP_ORDER (e.g. legacy "PERCEIVE" / "CONTEXTUALIZE"
+        # emissions from older traces) just leaves all indicators
+        # inactive, which is the correct visual when the loop is
+        # between recognized phases.
         for name, ind in self._indicators.items():
             ind.set_active(name == step)
-
-        if step == LoopStep.PERCEIVE:
-            # New cycle — new root item in trace
-            cycle_num = self.trace_tree.topLevelItemCount() + 1
-            self._current_cycle_item = QTreeWidgetItem(
-                self.trace_tree, [f"Cycle {cycle_num}"]
-            )
-            self._current_cycle_item.setForeground(0, QColor("#555"))
-            self._current_cycle_item.setExpanded(True)
-            self._step_group_items = {}
-            self.trace_tree.scrollToItem(self._current_cycle_item)
-
-    @Slot(str, str)
-    def on_trace_event(self, step: str, message: str):
-        if self._current_cycle_item is None:
-            return
-
-        color = STEP_COLORS.get(step, "#546E7A")
-
-        # Get or create step group
-        if step not in self._step_group_items:
-            group = QTreeWidgetItem(self._current_cycle_item, [step])
-            group.setForeground(0, QColor(color))
-            group.setExpanded(True)
-            self._step_group_items[step] = group
-        else:
-            group = self._step_group_items[step]
-
-        msg_item = QTreeWidgetItem(group, [message])
-        msg_item.setForeground(0, QColor("#888"))
-        self.trace_tree.scrollToItem(msg_item)
-
-    @Slot(str, str, str)
-    def on_tool_called(self, tool_name: str, args: str, result: str):
-        if self._current_cycle_item is None:
-            return
-        tool_item = QTreeWidgetItem(self._current_cycle_item, [f"⚡  {tool_name}"])
-        tool_item.setForeground(0, QColor("#FFD700"))
-        QTreeWidgetItem(tool_item, [f"args   → {args[:100]}"]).setForeground(
-            0, QColor("#777")
-        )
-        QTreeWidgetItem(tool_item, [f"result → {result[:100]}"]).setForeground(
-            0, QColor("#777")
-        )
-        tool_item.setExpanded(True)
-
-

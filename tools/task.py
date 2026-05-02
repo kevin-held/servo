@@ -123,10 +123,18 @@ def _db_path() -> str:
     return os.path.join(os.path.dirname(__file__), "..", "state", "state.db")
 
 
-def _connect() -> sqlite3.Connection:
-    path = _db_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    conn = sqlite3.connect(path, check_same_thread=False)
+def _connect(conn_factory=None) -> sqlite3.Connection:
+    # Phase E (UPGRADE_PLAN_4 sec 4) -- conn_factory injection. When the
+    # Cognate surface supplies a zero-arg callable returning a sqlite3
+    # connection, we use it; otherwise fall through to the Phase D
+    # literal path (state/state.db). The PRAGMA + idempotent CREATE
+    # TABLE stay here so the factory stays schema-agnostic.
+    if conn_factory is not None:
+        conn = conn_factory()
+    else:
+        path = _db_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        conn = sqlite3.connect(path, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     # Idempotent create: if the loop hasn't booted StateStore yet (e.g.
     # tool is executed in isolation during a test) we still want a
@@ -255,14 +263,30 @@ def _clear(conn: sqlite3.Connection) -> str:
 
 
 def execute(action: str = "", tasks: list = None, description: str = "",
-            task_id=None) -> str:
+            task_id=None, *, conn_factory=None, tool_context=None) -> str:
+    # Phase E (UPGRADE_PLAN_4 sec 4) -- optional conn_factory injection
+    # forwarded to _connect so the Cognate surface can route task-ledger
+    # I/O without the loop shim's sqlite3.connect interception. Legacy
+    # boot (loop.py) passes nothing and the Phase D literal is unchanged.
+    #
+    # Phase F (UPGRADE_PLAN_5 sec 5) -- tool_context kwarg supersedes the
+    # bare conn_factory pattern with a uniform ToolContext object that
+    # carries state/config/telemetry/conn_factory/ollama. Resolution
+    # order: explicit conn_factory wins (back-compat with Phase E
+    # callers), then tool_context.conn_factory, then the legacy literal.
+    # Duck-typed read via getattr so this file stays independent of
+    # core/tool_context.py imports.
+    if conn_factory is None and tool_context is not None:
+        ctx_factory = getattr(tool_context, "conn_factory", None)
+        if callable(ctx_factory):
+            conn_factory = ctx_factory
     if not action:
         return (
             "Error: `action` is required. Valid actions: create, complete, "
             "list, clear."
         )
 
-    conn = _connect()
+    conn = _connect(conn_factory=conn_factory)
     try:
         if action == "create":
             return _create(conn, tasks or [], description or "")

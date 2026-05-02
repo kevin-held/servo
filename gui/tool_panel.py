@@ -9,9 +9,32 @@ from PySide6.QtGui import QColor, QFont, QTextCursor
 
 from core.tool_registry import ToolRegistry
 from gui.log_panel import LogPanel
-from gui.components import CollapsibleSection
+
+# Phase E (UPGRADE_PLAN_4 sec 6.2) -- read the eleven Phase D atomic
+# primitives directly off ServoCore as a public frozenset. Iteration
+# order is not part of the contract; we only test membership. Imported
+# at module load so the badge logic in `_populate` doesn't pay an
+# import cost per row.
+try:
+    from core.core import ServoCore as _ServoCore
+    _ATOMIC_PRIMITIVES: frozenset = frozenset(getattr(_ServoCore, "ATOMIC_PRIMITIVES", ()))
+except Exception:
+    # Defensive: if core.core fails to import (e.g. partial install),
+    # fall through to an empty set so the panel still renders.
+    _ATOMIC_PRIMITIVES = frozenset()
 
 
+# Phase G (UPGRADE_PLAN_6 sec 2.b, D-20260427-02) -- arrow glyphs used
+# for the InstalledTools / Stream / Log toggle buttons. Defined as
+# module-level literals so they don't need to be re-encoded inside the
+# f-strings that build button labels (Python 3.10 disallows backslash
+# escapes inside f-string expressions).
+_ARROW_DOWN = "\u25BC"
+_ARROW_RIGHT = "\u25B6"
+_DOT_FILLED = "\u25CF"
+_DOT_HOLLOW = "\u25CB"
+_RELOAD_GLYPH = "\u21BA"
+_FOLD_GLYPH = "\u00BB"
 
 
 class ToolPanel(QWidget):
@@ -40,7 +63,7 @@ class ToolPanel(QWidget):
         header.addWidget(lbl)
         header.addStretch()
 
-        reload_btn = QPushButton("↺")
+        reload_btn = QPushButton(_RELOAD_GLYPH)
         reload_btn.setFixedWidth(28)
         reload_btn.setToolTip("Reload all tools from disk")
         reload_btn.setStyleSheet("""
@@ -57,7 +80,7 @@ class ToolPanel(QWidget):
         reload_btn.clicked.connect(self._reload_all)
         header.addWidget(reload_btn)
 
-        self.fold_btn = QPushButton("»")
+        self.fold_btn = QPushButton(_FOLD_GLYPH)
         self.fold_btn.setFixedWidth(28)
         self.fold_btn.setToolTip("Collapse Tool Panel")
         self.fold_btn.setStyleSheet("""
@@ -95,10 +118,44 @@ class ToolPanel(QWidget):
         self.tool_list.setSizeAdjustPolicy(QAbstractScrollArea.AdjustToContents)
         self.tool_list.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.tool_list.itemClicked.connect(self._on_item_clicked)
-        
-        self.sec_tools = CollapsibleSection("INSTALLED TOOLS", "#888")
-        self.sec_tools.set_widget(self.tool_list)
-        layout.addWidget(self.sec_tools, 1)
+
+        # Phase G (UPGRADE_PLAN_6 sec 2.b, D-20260427-02) -- INSTALLED
+        # TOOLS now uses the same QPushButton + arrow toggle idiom as
+        # Stream Viewer / Log Viewer below, replacing the heavier
+        # `CollapsibleSection` wrapper. Color #4CAF50 (green) matches
+        # the standalone-tool foreground in `_populate`, so the section
+        # header reads as the same family as its contents.
+        tools_container = QWidget()
+        tc_layout = QVBoxLayout(tools_container)
+        tc_layout.setContentsMargins(0, 0, 0, 0)
+        tc_layout.setSpacing(4)
+
+        self.tools_toggle_btn = QPushButton(f"{_ARROW_DOWN} INSTALLED TOOLS")
+        self.tools_toggle_btn.setStyleSheet("""
+            QPushButton {
+                background: #1a1a1a;
+                color: #4CAF50;
+                border: 1px solid #2a2a2a;
+                border-radius: 4px;
+                padding: 6px;
+                font-size: 11px;
+                text-align: left;
+                font-weight: bold;
+                letter-spacing: 1px;
+            }
+            QPushButton:hover { background: #252525; color: #81C784; }
+        """)
+        self.tools_toggle_btn.clicked.connect(self._toggle_tools_ui)
+        tc_layout.addWidget(self.tools_toggle_btn)
+
+        self.tools_content = QWidget()
+        tools_inner = QVBoxLayout(self.tools_content)
+        tools_inner.setContentsMargins(0, 4, 0, 0)
+        tools_inner.setSpacing(0)
+        tools_inner.addWidget(self.tool_list)
+
+        tc_layout.addWidget(self.tools_content)
+        layout.addWidget(tools_container, 1)
 
 
         # Stream container
@@ -106,8 +163,8 @@ class ToolPanel(QWidget):
         sc_layout = QVBoxLayout(stream_container)
         sc_layout.setContentsMargins(0, 0, 0, 0)
         sc_layout.setSpacing(4)
-        
-        self.stream_toggle_btn = QPushButton("▶ Stream Viewer")
+
+        self.stream_toggle_btn = QPushButton(f"{_ARROW_RIGHT} Stream Viewer")
         self.stream_toggle_btn.setStyleSheet("""
             QPushButton {
                 background: #1a1a1a;
@@ -135,7 +192,7 @@ class ToolPanel(QWidget):
         self.stream_enabled_check.setStyleSheet("color: #888; font-size: 11px;")
         stream_controls.addWidget(self.stream_enabled_check)
         stream_controls.addStretch()
-        
+
         stream_controls_widget = QWidget()
         stream_controls_widget.setLayout(stream_controls)
         stream_layout.addWidget(stream_controls_widget)
@@ -155,7 +212,7 @@ class ToolPanel(QWidget):
             }
         """)
         stream_layout.addWidget(self.stream_output)
-        
+
         sc_layout.addWidget(self.stream_content)
         self.stream_content.setVisible(False)
         layout.addWidget(stream_container)
@@ -166,7 +223,7 @@ class ToolPanel(QWidget):
         lc_layout.setContentsMargins(0, 0, 0, 0)
         lc_layout.setSpacing(4)
 
-        self.log_toggle_btn = QPushButton("▶ Log Viewer")
+        self.log_toggle_btn = QPushButton(f"{_ARROW_RIGHT} Log Viewer")
         self.log_toggle_btn.setStyleSheet("""
             QPushButton {
                 background: #1a1a1a;
@@ -201,7 +258,7 @@ class ToolPanel(QWidget):
 
         self.setStyleSheet("QWidget { background: #111; }")
 
-    # ── Population ────────────────────────────────
+    # ---- Population --------------------------
 
     def _populate(self):
         current_name = None
@@ -215,26 +272,32 @@ class ToolPanel(QWidget):
         for name, tool in self.registry.get_all_tools().items():
             enabled   = tool["enabled"]
             is_system = tool.get("is_system", False)
-            
+
             # Color logic (D-20260421-22): Yellow for System, Green for Standalone
             if not enabled:
                 color = "#555"
             elif is_system:
-                color = "#FFD600" # High-visibility Yellow
+                color = "#FFD600"  # High-visibility Yellow
             else:
-                color = "#4CAF50" # Standard Green
-            
-            item = QListWidgetItem(f"{'●' if enabled else '○'}  {name}")
+                color = "#4CAF50"  # Standard Green
+
+            # Phase E (UPGRADE_PLAN_4 sec 6.2) -- mark rows whose tool
+            # name is in ServoCore.ATOMIC_PRIMITIVES with a leading
+            # "[A]" badge so the dispatch surface is visible at a
+            # glance. Eleven rows under default Phase D registry.
+            atomic_badge = "[A] " if name in _ATOMIC_PRIMITIVES else "    "
+            dot = _DOT_FILLED if enabled else _DOT_HOLLOW
+            item = QListWidgetItem(f"{dot}  {atomic_badge}{name}")
             item.setData(Qt.UserRole, name)
             item.setForeground(QColor(color))
-            
+
             if name in ("context_dump", "system_config"):
                 item.setToolTip(f"Click to run default {name} call")
                 # Visual cue for interactivity
                 font = item.font()
                 font.setBold(True)
                 item.setFont(font)
-            
+
             self.tool_list.addItem(item)
             if name == current_name:
                 item_to_select = item
@@ -243,14 +306,14 @@ class ToolPanel(QWidget):
         if item_to_select:
             self.tool_list.setCurrentItem(item_to_select)
 
-    # ── Slots ─────────────────────────────────────
+    # ---- Slots --------------------------
 
     @Slot(QListWidgetItem)
     def _on_item_clicked(self, item):
         if not item:
             return
         name = item.data(Qt.UserRole)
-        
+
         # 1. Diagnostic Quick-Actions
         if name == "context_dump":
             # show_user=true, pause_loop=false
@@ -258,7 +321,7 @@ class ToolPanel(QWidget):
         elif name == "system_config":
             # default empty args runs a dump
             self.tool_execute_requested.emit(name, {})
-        
+
         # 2. General selection behavior
         self._on_selected(item, None)
 
@@ -276,24 +339,50 @@ class ToolPanel(QWidget):
         self._populate()
         self.tool_changed.emit()
 
+    def _toggle_tools_ui(self):
+        visible = not self.tools_content.isVisible()
+        self.tools_content.setVisible(visible)
+        arrow = _ARROW_DOWN if visible else _ARROW_RIGHT
+        self.tools_toggle_btn.setText(f"{arrow} INSTALLED TOOLS")
+
     def _toggle_stream_ui(self):
         visible = not self.stream_content.isVisible()
         self.stream_content.setVisible(visible)
-        self.stream_toggle_btn.setText("▼ Stream Viewer" if visible else "▶ Stream Viewer")
-
-
+        arrow = _ARROW_DOWN if visible else _ARROW_RIGHT
+        self.stream_toggle_btn.setText(f"{arrow} Stream Viewer")
 
     def _toggle_log_ui(self):
         visible = not self.log_content.isVisible()
         self.log_content.setVisible(visible)
-        self.log_toggle_btn.setText("▼ Log Viewer" if visible else "▶ Log Viewer")
+        arrow = _ARROW_DOWN if visible else _ARROW_RIGHT
+        self.log_toggle_btn.setText(f"{arrow} Log Viewer")
+
+    # Listener for `ServoCoreThread.tool_dispatched(tool_name)`.
+    # Highlights the matching row in `tool_list` so the user sees
+    # which atomic primitive lx_Act just selected.
+    @Slot(str)
+    def on_tool_dispatched(self, tool_name: str):
+        if not tool_name:
+            return
+        try:
+            for i in range(self.tool_list.count()):
+                item = self.tool_list.item(i)
+                if item is None:
+                    continue
+                if str(item.data(Qt.UserRole) or "") == str(tool_name):
+                    self.tool_list.setCurrentItem(item)
+                    break
+        except Exception:
+            # Row highlight is purely cosmetic -- a failure here must
+            # not propagate into the Servo dispatch path.
+            pass
 
 
 
     @Slot()
     def on_stream_started(self):
         self.stream_output.clear()
-        
+
     @Slot(str)
     def on_stream_chunk(self, chunk: str):
         self.stream_output.moveCursor(QTextCursor.End)

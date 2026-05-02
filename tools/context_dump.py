@@ -32,16 +32,28 @@ def _read_goals() -> dict:
         return {}
 
 
-def _read_working_memory() -> str:
+def _read_working_memory(conn_factory=None) -> str:
+    # Phase E (UPGRADE_PLAN_4 sec 4) -- conn_factory injection. When the
+    # Cognate surface supplies a zero-arg callable returning a sqlite3
+    # connection, use it; otherwise fall through to the Phase D literal
+    # path (state/state.db relative to project root).
     try:
-        db_path = _ROOT / "state" / "state.db"
-        if not db_path.exists():
-            return ""
-        conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        conn.execute("PRAGMA journal_mode=WAL")
-        cur = conn.execute("SELECT value FROM state WHERE key = 'working_memory'")
-        row = cur.fetchone()
-        conn.close()
+        if conn_factory is not None:
+            try:
+                conn = conn_factory()
+            except Exception:
+                return ""
+        else:
+            db_path = _ROOT / "state" / "state.db"
+            if not db_path.exists():
+                return ""
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            cur = conn.execute("SELECT value FROM state WHERE key = 'working_memory'")
+            row = cur.fetchone()
+        finally:
+            conn.close()
         return row[0] if row else ""
     except Exception:
         return ""
@@ -92,21 +104,26 @@ def _get_error_summary() -> dict:
         return {"errors_last_hour": -1, "recent_errors": []}
 
 
-def _get_loop_telemetry() -> dict:
+def _get_loop_telemetry(loop_ref=None) -> dict:
     """
     Pull truncation / auto-continue / throttle counters from the running CoreLoop.
     Returns empty dict if the loop isn't reachable (e.g. called outside the GUI).
+
+    Phase F (UPGRADE_PLAN_5 sec 5) -- caller may pass an explicit loop_ref
+    (typically tool_context.legacy_loop_ref or the LxLoopAdapter). When
+    absent, fall through to the legacy QApplication-walking discovery.
     """
     try:
-        from PySide6.QtWidgets import QApplication
-        app = QApplication.instance()
-        if app is None:
-            return {}
-        loop = None
-        for widget in app.topLevelWidgets():
-            if hasattr(widget, "loop"):
-                loop = widget.loop
-                break
+        loop = loop_ref
+        if loop is None:
+            from PySide6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app is None:
+                return {}
+            for widget in app.topLevelWidgets():
+                if hasattr(widget, "loop"):
+                    loop = widget.loop
+                    break
         if loop is None:
             return {}
         return {
@@ -158,11 +175,31 @@ def _get_tool_health() -> dict:
         return {"error": str(e)}
 
 
-def execute(show_user: bool = False, pause_loop: bool = True) -> str:
+def execute(show_user: bool = False, pause_loop: bool = True, *, conn_factory=None, tool_context=None) -> str:
+    # Phase E (UPGRADE_PLAN_4 sec 4) -- conn_factory forwarded to the
+    # working-memory reader so the Cognate surface can route this tool's
+    # state.db access without relying on the loop shim's sqlite3.connect
+    # interception. Legacy boot passes nothing; the fallback is unchanged.
+    #
+    # Phase F (UPGRADE_PLAN_5 sec 5) -- tool_context kwarg supersedes the
+    # bare conn_factory pattern with a uniform ToolContext object that
+    # carries state/config/telemetry/conn_factory/ollama/legacy_loop_ref.
+    # Resolution order:
+    #   - conn_factory: explicit kwarg wins; otherwise tool_context.conn_factory.
+    #   - loop telemetry / show_user: tool_context.legacy_loop_ref wins;
+    #     otherwise the legacy QApplication discovery in _get_loop_telemetry.
+    # Reads are duck-typed so this file stays independent of
+    # core/tool_context.py imports.
+    loop_ref = None
+    if tool_context is not None:
+        if conn_factory is None:
+            ctx_factory = getattr(tool_context, "conn_factory", None)
+            if callable(ctx_factory):
+                conn_factory = ctx_factory
+        loop_ref = getattr(tool_context, "legacy_loop_ref", None)
     goals_raw = _read_goals()
     now = time.time()
-    
-    # ... (skipping some logic for replacement clarity if possible, but I'll replace the full body for safety)
+
     goals_summary = {}
     for name, meta in goals_raw.items():
         entry = {"type": meta.get("type"), "description": meta.get("description")}
@@ -179,7 +216,7 @@ def execute(show_user: bool = False, pause_loop: bool = True) -> str:
                 entry["auto_expires_in_minutes"] = mins_left
         goals_summary[name] = entry
 
-    mem = _read_working_memory()
+    mem = _read_working_memory(conn_factory=conn_factory)
     mem_summary = mem[:500] + ("... [truncated]" if len(mem) > 500 else "")
 
     hw = _get_hardware_status()
@@ -221,4 +258,3 @@ def execute(show_user: bool = False, pause_loop: bool = True) -> str:
             pass
 
     return json.dumps(payload, indent=2)
-

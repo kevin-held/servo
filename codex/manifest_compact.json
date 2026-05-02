@@ -1,6 +1,6 @@
 {
   "name": "Servo",
-  "version": "1.5.0",
+  "version": "1.8.0",
   "layers": {
     "cortex": "runtime (core/loop.py)",
     "persona": "identity (codex/manifests/persona_core.md)",

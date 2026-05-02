@@ -54,9 +54,8 @@ class SentinelLogger:
         return cls._instance
 
     def __init__(self):
-        if hasattr(self, "_initialized"):
+        if getattr(self, "_initialized", False):
             return
-        self._initialized = True
 
         self._write_lock = threading.Lock()
 
@@ -69,6 +68,7 @@ class SentinelLogger:
 
         # Open (or create) the active log in append mode
         self._file = open(_ACTIVE_LOG, "a", encoding="utf-8")
+        self._initialized = True
 
     # ── Public API ────────────────────────────────────
 

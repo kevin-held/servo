@@ -25,10 +25,8 @@ class TestMemoryManager(unittest.TestCase):
 
     def tearDown(self):
         self._patcher_os.stop()
-        if os.path.exists(self._db_path):
-            try: os.remove(self._db_path)
-            except: pass
-        os.rmdir(self._temp_dir)
+        import shutil
+        shutil.rmtree(self._temp_dir, ignore_errors=True)
 
     def test_overwrite_action(self):
         resp = memory_manager.execute("overwrite", "Initial logic")

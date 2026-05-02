@@ -117,9 +117,28 @@ def _set_parameter(loop, parameter: str, value: str) -> str:
     return loop.config.set(parameter, value, loop_ref=loop)
 
 
-def execute(operation: str = "get", parameter: str = "", value: str = "", 
-            min_value: str = "", max_value: str = "") -> str:
-    loop = _get_loop_ref()
+def execute(operation: str = "get", parameter: str = "", value: str = "",
+            min_value: str = "", max_value: str = "", *, tool_context=None) -> str:
+    # Phase F (UPGRADE_PLAN_5 sec 5) -- tool_context kwarg lets the
+    # Cognate dispatch surface inject a CoreLoop-like reference directly,
+    # superseding the lx_loop_shim's monkey-patch of _get_loop_ref. Resolution
+    # order: tool_context.legacy_loop_ref (the LxLoopAdapter or a real
+    # CoreLoop) wins; otherwise fall through to the legacy QApplication
+    # discovery path. Reads are duck-typed so this file stays independent
+    # of core/tool_context.py imports.
+    #
+    # Note: this tool reads the rich GUI-thread knobs (conversation_history,
+    # chain_limit, ...) directly off the loop ref. Those still live on
+    # ServoCoreThread / CoreLoop, not in tool_context's narrow surface, so
+    # we still need a loop ref of some kind. Phase G+ may broaden the
+    # context to carry those knobs natively.
+    loop = None
+    if tool_context is not None:
+        legacy = getattr(tool_context, "legacy_loop_ref", None)
+        if legacy is not None:
+            loop = legacy
+    if loop is None:
+        loop = _get_loop_ref()
     if loop is None:
         return "Error: Could not access the running CoreLoop instance."
 

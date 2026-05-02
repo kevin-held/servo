@@ -71,7 +71,23 @@ class CorrectnessAudit(unittest.TestCase):
             compile(broken_code, "<string>", "exec")
 
     def test_core_loop_handshake(self):
-        """MVB 4: Verify ServoCore.run_cycle handshake with lx_state."""
+        """MVB 4: Verify ServoCore.run_cycle handshake with lx_state.
+
+        Phase F (D-20260426-01): lx_Observe.execute is now a park/wake
+        gate -- it blocks on `core.perception_cond` until a perception
+        event arrives. The audit isn't a real GUI session so we seed
+        one synthetic `user_input` perception via
+        `core.submit_perception(...)` before `run_cycle` to unblock the
+        park; OBSERVE pops it and emits its delta. We halt on the
+        OBSERVE -> REASON transition rather than chasing the full
+        OBSERVE -> REASON -> ACT chain because Phase F's REASON is
+        LLM-driven (calls Ollama) and the audit has no live Ollama
+        fixture wired in yet -- exercising the handshake (does the
+        store + cognate registry round-trip a delta?) is the test's
+        actual contract; full cognate-chain coverage belongs in a
+        separate end-to-end suite once the deterministic Ollama
+        fixture lands.
+        """
         from core.core import ServoCore
         from core.lx_state import lx_StateStore
 
@@ -81,19 +97,29 @@ class CorrectnessAudit(unittest.TestCase):
         store = lx_StateStore(profile="lx_audit_handshake")
         store.reset()
 
+        # Phase F (D-20260426-01): feed OBSERVE a synthetic perception
+        # so it wakes from the park/wake gate immediately rather than
+        # blocking the audit on a queue that will never fill.
+        core.submit_perception({
+            "kind": "user_input",
+            "text": "audit handshake",
+        })
+
         # Inject halt condition to prevent infinite loop during audit:
-        # OBSERVE -> REASON -> ACT (halt set here) -> break
+        # OBSERVE writes current_step="REASON" -> halt set here -> break.
+        # Pre-Phase F this fired on "ACT" (REASON's transition); we now
+        # halt one cognate earlier so REASON's LLM dispatch doesn't run.
         original_apply = store.apply_delta
         def mock_apply_delta(delta):
             original_apply(delta)
-            if delta.get("current_step") == "ACT":
+            if delta.get("current_step") == "REASON":
                 store.current_state["halt"] = True
 
         store.apply_delta = mock_apply_delta
 
         core.run_cycle(store)
 
-        self.assertEqual(store.current_state["current_step"], "ACT")
+        self.assertEqual(store.current_state["current_step"], "REASON")
         self.assertTrue(store.current_state["halt"])
 
 def run_audit() -> dict:
